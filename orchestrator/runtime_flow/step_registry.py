@@ -14,6 +14,7 @@ from ..llm_interaction.prompt_texts import (
     NARRATE_PROMPT,
     VALIDATE_PROMPT,
     STATUS_PROMPT,
+    INTRO_PROMPT,
 )
 
 
@@ -73,5 +74,17 @@ def build_steps():
             use_cot=True,
             validator=validate_narration_step,
             parser=parse_narrative,
+        ),
+
+        "intro": LLMStep(
+            name="intro",
+            system_prompt=INTRO_PROMPT,
+            tags={"narrative", "recap"},
+            use_cot=True,
+            validator=validate_narration_step,
+            parser=lambda s: {
+                "narrative": parse_narrative(s),
+                "recap": (s.get("recap") or "").strip(),
+            },
         ),
     }
