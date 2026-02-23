@@ -4,20 +4,17 @@ from ..world_state.story import StoryGraph, BEAT_LIST, STARTING_STATE
 from ..llm_interaction.adapter import LLMAdapter
 from .session_state import BeatTracker, SessionSummary, ActiveKeyManager, FocusManager, SnapshotBuilder
 from .step_registry import build_steps
-from .step import parse_sections, validate_narration_step
+from .step import parse_sections
 from ..llm_interaction.prompt_builders import (
     PromptState,
     build_intro_prompt,
     build_intent_prompt,
-    build_focus_prompt,
     build_plan_prompt,
     build_validate_prompt,
     build_narrate_prompt,
-    build_status_prompt,
 )
 from ..world_state.story import create_initial_game_state
-import json
-from ..world_state.tools import TOOL_DEFINITIONS, VALIDATE_TOOLS, execute_tool, move_to_location
+from ..world_state.tools import VALIDATE_TOOLS, execute_tool, move_to_location
 
 class StoryEngine:
 
@@ -185,79 +182,70 @@ class StoryEngine:
 
         validate_prompt = build_validate_prompt(state, plan)
 
-        validate_tool_calls = []
-        validate_messages = [{"role": "user", "content": validate_prompt}]
+        def _validate_tool_executor(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+            return execute_tool(tool_name, arguments, self.game_state, self.story)
 
-        max_validate_iterations = 3
-        final_validate_content = ""
+        def _validate_stop_hook(assistant_text: str, _stop_hook_active: bool) -> Optional[str]:
+            minimal = parse_sections(assistant_text, {"verdict", "advance"})
+            verdict_text = minimal.get("verdict", "").strip().lower()
+            advance_text = minimal.get("advance", "").strip().lower()
 
-        for iteration in range(max_validate_iterations):
+            if verdict_text not in {"approve", "revise"}:
+                return "Before completing, output `Verdict: approve | revise`."
+            if not (advance_text.startswith("y") or advance_text.startswith("n")):
+                return "Before completing, output `Advance: yes | no`."
+            return None
+
+        validate_loop = self.adapter.run_tool_loop(
+            stage="validate",
+            system_prompt=self.steps["validate"].system_prompt,
+            messages=[{"role": "user", "content": validate_prompt}],
+            tools=VALIDATE_TOOLS,
+            tool_executor=_validate_tool_executor,
+            max_iterations=8,
+            stop_hook=_validate_stop_hook,
+        )
+
+        final_validate_content = validate_loop["final_answer"]
+        validate_tool_calls = validate_loop["tool_calls"]
+
+        if validate_loop["status"] != "completed" or not final_validate_content.strip():
             if self.adapter.verbose:
-                print(f"\n[TOOL] Validation iteration {iteration + 1}")
-            
+                print("[TOOL] Validation loop hit max iterations; forcing final verdict")
+
+            forced_messages = [
+                *validate_loop["messages"],
+                {
+                    "role": "user",
+                    "content": (
+                        "Finalize now. Do not call tools. "
+                        "Return Thoughts, Verdict, Notes, and Advance in the required format."
+                    ),
+                },
+            ]
             response = self.adapter.request_with_tools(
                 stage="validate",
                 system_prompt=self.steps["validate"].system_prompt,
-                messages=validate_messages,
-                tools=VALIDATE_TOOLS  # Only read-only tools
-            )
-            
-            message = response.get("message", {})
-            tool_calls = message.get("tool_calls", [])
-            
-            if not tool_calls:
-                final_validate_content = self.adapter._extract_content(response)
-                if self.adapter.verbose:
-                    print(f"[TOOL] No more tool calls, got validation result")
-                break
-            
-            # Execute each tool call
-            for tool_call in tool_calls:
-                tool_name = tool_call["function"]["name"]
-                arguments = tool_call["function"]["arguments"]
-                if isinstance(arguments, str):
-                    try:
-                        arguments = json.loads(arguments)
-                    except json.JSONDecodeError:
-                        arguments = {}
-                
-                if self.adapter.verbose:
-                    print(f"[TOOL] Calling {tool_name} with {arguments}")
-                
-                result = execute_tool(tool_name, arguments, self.game_state, self.story)
-                validate_tool_calls.append({
-                    "name": tool_name,
-                    "arguments": arguments,
-                    "result": result
-                })
-                
-                if self.adapter.verbose:
-                    print(f"[TOOL] Result: {result}")
-            
-            validate_messages.append({
-                "role": "assistant",
-                "content": message.get("content", ""),
-                "tool_calls": tool_calls
-            })
-            
-            for idx, tool_call in enumerate(tool_calls):
-                validate_messages.append({
-                    "role": "tool",
-                    "content": json.dumps(validate_tool_calls[-(len(tool_calls) - idx)]["result"])
-                })
-
-        else:
-            # Max iterations - force final response
-            response = self.adapter.request_with_tools(
-                stage="validate",
-                system_prompt=self.steps["validate"].system_prompt + "\n\nProvide your validation verdict now.",
-                messages=validate_messages,
-                tools=[]
+                messages=forced_messages,
+                tools=[],
             )
             final_validate_content = self.adapter._extract_content(response)
 
         # Parse the validation result
         sections = parse_sections(final_validate_content, {"thoughts", "verdict", "notes", "advance"})
+
+        validator = self.steps["validate"].validator
+        if validator:
+            try:
+                validator(sections)
+            except Exception as exc:
+                sections.setdefault("verdict", "revise")
+                sections.setdefault(
+                    "notes",
+                    f"Validation output format issue: {exc}. Defaulting to conservative revise.",
+                )
+                sections.setdefault("advance", "no")
+
         parsed_result = self.steps["validate"].parser(sections)
         verdict, notes, advance = parsed_result
         
@@ -270,7 +258,9 @@ class StoryEngine:
                 "sections": sections,
                 "parsed": parsed_result,
             }],
-            "tool_calls": validate_tool_calls
+            "tool_calls": validate_tool_calls,
+            "rounds": validate_loop["rounds"],
+            "status": validate_loop["status"],
         }
 
         if trace is not None:

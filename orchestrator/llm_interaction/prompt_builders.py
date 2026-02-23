@@ -126,11 +126,9 @@ def build_validate_prompt(state: PromptState, plan: str) -> str:
         # Player Input
         {state.player_input}
 
-        # Entity Information
-        {"entity": 
-            "location": ENTITY_REGISTRY["entity"].location,
-            "memories": ENTITY_REGISTRY["entity"].status,
-        }
+        # Entity Hints
+        Focus Entities: {', '.join(state.focus) or 'None'}
+        Candidate Entities: {keys or 'None'}
         
         # Proposed Plan
         {plan}
@@ -239,5 +237,4 @@ def build_intro_prompt(state: PromptState) -> str:
         {state.history_text or 'No prior conversation.'}
         """
     ).strip()
-
 
