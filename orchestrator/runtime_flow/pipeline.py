@@ -13,8 +13,9 @@ from ..llm_interaction.prompt_builders import (
     build_validate_prompt,
     build_narrate_prompt,
 )
-from ..world_state.story import create_initial_game_state
-from ..world_state.tools import VALIDATE_TOOLS, execute_tool, move_to_location
+from ..world_state.story import create_initial_game_state, NodeType
+import json
+from ..world_state.tools import TOOL_DEFINITIONS, VALIDATE_TOOLS, execute_tool, move_to_location
 
 class StoryEngine:
 
@@ -80,6 +81,45 @@ class StoryEngine:
     # -----------------------
 
     def _make_state(self, player_input, intent):
+        entity_info = {}
+        for key in self.active_keys:
+            node = self.story.get_node(key)
+            if node is None:
+                continue
+
+            info = {
+                "node_type": node.node_type.value,
+                "connections": ", ".join(node.connections) if node.connections else "none",
+            }
+
+            if node.node_type == NodeType.LOCATION:
+                info["location"] = key
+                info["discovered"] = key in self.game_state.discovered_keys
+
+            elif node.node_type == NodeType.NPC:
+                #npc_locations first, then fall back to home connection
+                info["location"] = (
+                    self.game_state.npc_locations.get(key)
+                    or (node.connections[0] if node.connections else "unknown")
+                )
+
+            elif node.node_type in (NodeType.ITEM, NodeType.CLUE):
+                #so the ittems are static and their location is always connections[0]
+                info["location"] = node.connections[0] if node.connections else "unknown"
+
+            #any relevant quest flags for this entity
+            relevant_flags = {
+                flag: val
+                for flag, val in self.game_state.quest_flags.items()
+                if key.lower().replace(" ", "_") in flag.lower()
+            }
+            if relevant_flags:
+                info["flags"] = ", ".join(
+                    f"{k}={'yes' if v else 'no'}" for k, v in relevant_flags.items()
+                )
+
+            entity_info[key] = info
+
         return PromptState(
             history_text=self.history.as_text(limit=8),
             active_keys=sorted(self.active_keys),
@@ -91,6 +131,7 @@ class StoryEngine:
             session_summary=self.summary.text(),
             intent=intent,
             player_input=player_input,
+            entity_info=entity_info,
         )
 
     # -----------------------
@@ -397,6 +438,7 @@ class StoryEngine:
             session_summary=self.summary.text(),
             intent={},
             player_input="",
+            entity_info={},
         )
 
         prompt = build_intro_prompt(state)

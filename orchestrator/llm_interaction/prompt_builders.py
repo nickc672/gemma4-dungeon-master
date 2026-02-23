@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import textwrap
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Any, List
 
 
@@ -24,7 +24,7 @@ class PromptState:
     session_summary: str
     intent: Dict[str, Any]
     player_input: str
-
+    entity_info: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
 # -------------------------
 # Helpers
@@ -104,6 +104,23 @@ def build_plan_prompt(state: PromptState) -> str:
 def build_validate_prompt(state: PromptState, plan: str) -> str:
     keys = ", ".join(state.active_keys)
 
+    # entity info block 
+    entity_lines = []
+    for key, info in state.entity_info.items():
+        parts = [f"  {key}:"]
+        if info.get("location"):
+            parts.append(f"    location: {info['location']}")
+        if info.get("status"):
+            parts.append(f"    status: {info['status']}")
+        if info.get("node_type"):
+            parts.append(f"    type: {info['node_type']}")
+        if info.get("connections"):
+            parts.append(f"    connections: {info['connections']}")
+        entity_lines.append("\n".join(parts))
+
+    entity_block = "\n".join(entity_lines) if entity_lines else "  None"
+
+
     return textwrap.dedent(
         f"""
         # Intent
@@ -126,9 +143,8 @@ def build_validate_prompt(state: PromptState, plan: str) -> str:
         # Player Input
         {state.player_input}
 
-        # Entity Hints
-        Focus Entities: {', '.join(state.focus) or 'None'}
-        Candidate Entities: {keys or 'None'}
+        # Entity Information
+        {entity_block}
         
         # Proposed Plan
         {plan}
