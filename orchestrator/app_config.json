@@ -20,6 +20,6 @@
     }
   },
   "rolls": {
-    "mode": "auto"
+    "mode": "manual"
   }
 }
