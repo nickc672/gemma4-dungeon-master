@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 import streamlit as st
 
+from orchestrator.app_config import get_ollama_default_model
 from orchestrator.runtime_flow.pipeline import StoryEngine
 from orchestrator.world_state.story import STARTING_STATE
 
@@ -265,7 +266,7 @@ def main() -> None:
         st.header("Session")
         model = st.text_input(
             "Ollama model",
-            value=st.session_state.get("model_input", "llama3.1:8b"),
+            value=st.session_state.get("model_input", get_ollama_default_model()),
             key="model_input",
         ) or ""
 
