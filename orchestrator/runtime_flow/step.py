@@ -173,11 +173,12 @@ def parse_sections(text: str, tags: set[str]) -> Dict[str, str]:
 
 def parse_intent(sections: Dict[str, str]) -> Dict[str, Any]:
     action = sections.get("action", "").strip().lower()
-    
+
     valid_actions = {"move", "talk", "inspect", "take", "use", "wait", "attack", "meta_question", "other"}
-    if action not in valid_actions:
+    action_category = action if action in valid_actions else "other"
+    if not action:
         action = "other"
-    
+
     targets_raw = sections.get("targets", "").strip()
     targets = [t.strip() for t in targets_raw.split(",") if t.strip() and t.strip().lower() not in {"none", "empty", ""}]
     
@@ -188,8 +189,9 @@ def parse_intent(sections: Dict[str, str]) -> Dict[str, Any]:
     implicit_move = implicit_move_raw.startswith("y")
     
     return {
-        "action": action, 
-        "targets": targets, 
+        "action": action,
+        "action_category": action_category,
+        "targets": targets,
         "refusals": refusals,
         "implicit_move": implicit_move
     }

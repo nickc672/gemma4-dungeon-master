@@ -6,11 +6,35 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
+from .app_config import get_ollama_default_model, get_roll_mode
 from .runtime_flow.pipeline import StoryEngine
 from .world_state.story import STARTING_STATE
 
-DEFAULT_MODEL = "glm-4.7-flash:q8_0"
+DEFAULT_MODEL = get_ollama_default_model()
 DEFAULT_TRUNCATE_LIMIT = 200
+TRACE_SKIP_KEYS = {"TOOL_CALLS", "ACTION_TOOLS", "MOVEMENT_BLOCKED", "TURN_TODO", "MECHANICS_WORLD_TOOLS"}
+
+
+def _prompt_manual_d20_roll(request: Dict[str, Any]) -> int:
+    args = dict(request.get("arguments") or {})
+    entity = str(args.get("entity_key", "Player"))
+    skill = str(args.get("skill", "check"))
+    dc = args.get("dc")
+    phase = str(request.get("phase") or "").strip()
+    phase_prefix = f"{phase} " if phase else ""
+
+    while True:
+        raw = input(f"[Roll] {phase_prefix}{entity} {skill} vs DC {dc} (enter d20 1-20): ").strip()
+        if raw.lower() in {"quit", "exit"}:
+            raise RuntimeError("Player aborted manual roll input.")
+        try:
+            value = int(raw)
+        except ValueError:
+            print("Enter an integer from 1 to 20.")
+            continue
+        if 1 <= value <= 20:
+            return value
+        print("Enter a d20 result between 1 and 20.")
 
 def truncate(text: str, limit: int = DEFAULT_TRUNCATE_LIMIT) -> str:
     """
@@ -71,7 +95,7 @@ def print_llm_verbose(turn_number: int, trace: Dict[str, Any]) -> None:
     # -------------------------
     for step_name, data in trace.items():
         # Skip special entries
-        if step_name.startswith("STATE_") or step_name in {"TOOL_CALLS", "ACTION_TOOLS", "MOVEMENT_BLOCKED"}:
+        if step_name.startswith("STATE_") or step_name in TRACE_SKIP_KEYS:
             continue
 
         print(f"[LLM] {step_name} STEP")
@@ -83,6 +107,58 @@ def print_llm_verbose(turn_number: int, trace: Dict[str, Any]) -> None:
             continue
 
         attempts = data.get("attempts", [])
+        rounds = data.get("rounds", [])
+
+        if rounds and not attempts:
+            print(f"STATUS: {data.get('status', 'unknown')}")
+            if data.get("prompt"):
+                print("\nPROMPT:")
+                print(str(data.get("prompt", "")).strip() or "<empty>")
+            if data.get("final_answer") is not None:
+                print("\nFINAL:")
+                print(str(data.get("final_answer", "")).strip() or "<empty>")
+            print()
+
+            for rnd in rounds:
+                print(f"--- Iteration {rnd.get('iteration', '?')} ---")
+                assistant_thinking = rnd.get("assistant_thinking", "")
+                if assistant_thinking:
+                    print("THINKING:")
+                    print(str(assistant_thinking).strip() or "<empty>")
+                    print()
+
+                assistant_text = rnd.get("assistant_text", "")
+                print("ASSISTANT:")
+                print(str(assistant_text).strip() or "<empty>")
+
+                tool_calls = rnd.get("tool_calls", [])
+                if tool_calls:
+                    print("TOOL CALLS:")
+                    for call in tool_calls:
+                        call_id = call.get("id") or "call"
+                        print(f"  - [{call_id}] {call.get('name')}")
+                        print(f"    args: {json.dumps(call.get('arguments', {}), ensure_ascii=True)}")
+
+                tool_results = rnd.get("tool_results", [])
+                if tool_results:
+                    print("TOOL RESULTS:")
+                    for tool_result in tool_results:
+                        print(f"  - {tool_result.get('name')}:")
+                        print(f"    {json.dumps(tool_result.get('result', {}), ensure_ascii=True)}")
+
+                hook_notes = rnd.get("hook_notes", [])
+                if hook_notes:
+                    print("HOOK NOTES:")
+                    for note in hook_notes:
+                        print(f"  - {note}")
+
+                if rnd.get("stop_block_reason"):
+                    print("STOP BLOCK:")
+                    print(str(rnd.get("stop_block_reason")).strip())
+                print()
+
+            print("-" * 60)
+            continue
 
         if not attempts:
             print("No attempts recorded.")
@@ -133,15 +209,6 @@ def print_llm_verbose(turn_number: int, trace: Dict[str, Any]) -> None:
                     print(truncate(str(parsed), 400))
                 print()
 
-        # Show tool calls for VALIDATE step
-        if step_name == "VALIDATE" and "tool_calls" in data:
-            tool_calls = data["tool_calls"]
-            if tool_calls:
-                print("\nVALIDATION TOOL CALLS:")
-                for idx, call in enumerate(tool_calls, 1):
-                    print(f"  {idx}. {call['name']}: {truncate(json.dumps(call['result']), 200)}")
-                print()
-
         print("-" * 60)
 
     # -------------------------
@@ -172,27 +239,37 @@ def print_llm_verbose(turn_number: int, trace: Dict[str, Any]) -> None:
         
         print("-" * 60)
 
+    mechanics_world_tools = trace.get("MECHANICS_WORLD_TOOLS", [])
+    if mechanics_world_tools:
+        print("[MECHANICS] WORLD TOOL TRACE")
+        print()
+        for idx, call in enumerate(mechanics_world_tools, 1):
+            print(f"--- Mechanics Tool {idx} ---")
+            print(f"Phase: {call.get('phase')}")
+            print(f"Function: {call.get('name')}")
+            print(f"Arguments: {call.get('arguments', {})}")
+            print(f"Result: {truncate(json.dumps(call.get('result', {})), 260)}")
+            print()
+        print("-" * 60)
+
+    turn_todo = trace.get("TURN_TODO", [])
+    if turn_todo:
+        print("[TURN] TODO FINAL STATE")
+        print()
+        for item in turn_todo:
+            print(
+                f"#{item.get('id')}: {truncate(str(item.get('task','')), 120)} | "
+                f"status={item.get('status')} | tool={item.get('tool_name') or 'none'}"
+            )
+            if item.get("resolution"):
+                print(f"  resolution: {truncate(str(item.get('resolution')), 220)}")
+        print("-" * 60)
+
     # -------------------------
     # Movement Blocked Flag
     # -------------------------
     if trace.get("MOVEMENT_BLOCKED"):
         print("[INFO] Movement was blocked - narration will re-describe current scene")
-        print("-" * 60)
-
-    # -------------------------
-    # Tool Calls (Old)
-    # -------------------------
-    tool_calls = trace.get("TOOL_CALLS", [])
-    if tool_calls:
-        print("[LLM] TOOL_CALLS (Legacy)")
-        print()
-        for idx, call in enumerate(tool_calls, 1):
-            print(f"--- Tool Call {idx} ---")
-            print(f"Function: {call['name']}")
-            print(f"Arguments: {call['arguments']}")
-            print(f"Result:")
-            print(truncate(json.dumps(call['result'], indent=2), 400))
-            print()
         print("-" * 60)
 
     # -------------------------
@@ -274,12 +351,15 @@ def main() -> None:
     if args.verbose:
         print("In verbose mode\n")
 
+    configured_roll_mode = get_roll_mode()
 
     engine = StoryEngine(
         model=args.model,
         verbose=args.verbose,
         initial_keys=args.start_keys,
         starting_state=args.starting_state or STARTING_STATE,
+        roll_mode=configured_roll_mode,
+        manual_roll_provider=_prompt_manual_d20_roll if configured_roll_mode == "manual" else None,
     )
 
     # ----- Session Folder -----

@@ -183,6 +183,38 @@ class LLMAdapter:
         return str(content)
 
     @staticmethod
+    def _extract_thinking(response: Any) -> str:
+        """
+        Extract model reasoning/thinking text when the backend provides it.
+        Different Ollama models expose this under slightly different keys.
+        """
+        message = getattr(response, "message", None)
+
+        if message is None and isinstance(response, dict):
+            message = response.get("message")
+
+        if not message:
+            return ""
+
+        if hasattr(message, "model_dump"):
+            payload = message.model_dump(exclude_none=True)
+        elif isinstance(message, dict):
+            payload = message
+        else:
+            return ""
+
+        for key in ("thinking", "reasoning", "reasoning_content"):
+            value = payload.get(key)
+            if value is None:
+                continue
+            if isinstance(value, list):
+                value = "".join(map(str, value))
+            text = str(value).strip()
+            if text:
+                return text
+        return ""
+
+    @staticmethod
     def _extract_tool_calls(response: Any) -> list[dict[str, Any]]:
         """
         Normalize Ollama tool calls into a plain list of dicts:
@@ -392,11 +424,13 @@ class LLMAdapter:
             )
 
             assistant_text = self._extract_content(response).strip()
+            assistant_thinking = self._extract_thinking(response).strip()
             tool_calls = self._normalize_tool_calls(response)
 
             round_info: dict[str, Any] = {
                 "iteration": iteration,
                 "assistant_text": assistant_text,
+                "assistant_thinking": assistant_thinking,
                 "tool_calls": [
                     {
                         "id": call["id"],
@@ -407,6 +441,7 @@ class LLMAdapter:
                 ],
                 "tool_results": [],
                 "stop_hook_active": stop_hook_active,
+                "hook_notes": [],
             }
             rounds.append(round_info)
 
@@ -492,6 +527,7 @@ class LLMAdapter:
                 if post_tool_use:
                     post_note = post_tool_use(tool_name, arguments, tool_payload)
                     if post_note:
+                        round_info.setdefault("hook_notes", []).append(str(post_note))
                         convo_messages.append({"role": "user", "content": f"Hook note: {post_note}"})
 
         return {

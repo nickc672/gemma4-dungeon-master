@@ -32,10 +32,15 @@ class PromptState:
 
 def _format_intent(intent: Dict[str, Any]) -> str:
     action = intent.get("action") or ""
+    action_category = intent.get("action_category") or ""
     targets = ", ".join(intent.get("targets") or [])
     refusals = ", ".join(intent.get("refusals") or [])
+    category_line = ""
+    if action_category and action_category != action:
+        category_line = f"\nAction_Category: {action_category}"
     return (
         f"\nAction: {action}"
+        f"{category_line}"
         f"\nTargets: {targets or 'None'}"
         f"\nRefusals: {refusals or 'None'}"
     )
@@ -81,14 +86,14 @@ def build_plan_prompt(state: PromptState) -> str:
         # Intent
         {_format_intent(state.intent)}
 
-        # Beat
+        # Beat (background pacing only; do not force advancement)
         Current: {state.beat_current}
         Next: {state.beat_next}
         Guide: {state.beat_guide}
 
         # Scene
         Location/Focus: {', '.join(state.focus) or 'None'}
-        Active Nodes: {keys or 'None'}
+        Relevant Graph Nodes (not all are necessarily visible right now): {keys or 'None'}
         Status: {state.story_status or 'Not set'}
         Session Summary: {state.session_summary}
 
@@ -161,7 +166,25 @@ def build_narrate_prompt(
     action_results: list[dict] = None,
 ) -> str:
     """Build the narration prompt with action results."""
-    
+
+    current_location = state.focus[0] if state.focus else "Unknown"
+    immediate_context_lines: list[str] = []
+    related_context_lines: list[str] = []
+    for key in sorted(state.entity_info):
+        info = state.entity_info[key]
+        node_type = info.get("node_type", "unknown")
+        location = info.get("location", "unknown")
+        line = f"- {key} ({node_type}, location={location})"
+        if location == current_location or key == current_location:
+            immediate_context_lines.append(line)
+        else:
+            related_context_lines.append(line)
+
+    if not immediate_context_lines:
+        immediate_context_lines = ["- None"]
+    if not related_context_lines:
+        related_context_lines = ["- None"]
+
     action_summary = ""
     if action_results:
         action_summary = "\n\n# Actions Executed\n"
@@ -172,14 +195,23 @@ def build_narrate_prompt(
             else:
                 action_summary += f"{tool_call['name']}: {result.get('reason', 'Failed')}\n"
     
-    return f"""# Story Context
+    return f"""# Player Request
+{state.player_input}
 
-Player's Current Location: {state.focus[0] if state.focus else "Unknown"}
+# Story Context
 
-Active Story Nodes (available for this scene):
+Player's Current Location: {current_location}
+
+Immediate Context Entities (grounding hints for the current location):
+{chr(10).join(immediate_context_lines)}
+
+Related World Context (relevant graph/entity context; may include adjacent or non-visible items):
+{chr(10).join(related_context_lines)}
+
+Relevant Graph Nodes (not guaranteed visible):
 {chr(10).join(f"- {key}" for key in state.active_keys)}
 
-# Beat
+# Beat (background pacing only)
 Current: {state.beat_current}
 Next: {state.beat_next}
 
@@ -196,7 +228,7 @@ Notes: {notes}
 
 ---
 
-Now generate the narrative response based on the CURRENT story context above.
+Now generate a DM response to the player's latest input using the CURRENT story context above.
 """
 
 
@@ -253,4 +285,3 @@ def build_intro_prompt(state: PromptState) -> str:
         {state.history_text or 'No prior conversation.'}
         """
     ).strip()
-

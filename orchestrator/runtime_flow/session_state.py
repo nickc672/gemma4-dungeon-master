@@ -146,7 +146,7 @@ class FocusManager:
         story,
     ) -> List[str]:
 
-        action = str(intent.get("action") or "").lower()
+        action = str(intent.get("action_category") or intent.get("action") or "").lower()
         targets = [t for t in intent.get("targets", []) if t in story.by_key]
         refusals = set(intent.get("refusals", []))
 

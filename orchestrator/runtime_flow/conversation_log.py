@@ -17,7 +17,7 @@ class History:
         self._add("player", text)
 
     def add_dm_turn(self, text: str) -> None:
-        self._add("narrator", text)
+        self._add("dm", text)
 
     def recent(self, limit: int | None = None) -> Sequence[Tuple[str, str]]:
         lim = limit if limit is not None else self.max_turns
@@ -26,7 +26,8 @@ class History:
         return self.turns[-lim:]
 
     def as_text(self, limit: int | None = None) -> str:
-        lines = [f"{role.title()}: {content}" for role, content in self.recent(limit)]
+        role_map = {"dm": "DM", "player": "Player"}
+        lines = [f"{role_map.get(role, role.title())}: {content}" for role, content in self.recent(limit)]
         return "\n".join(lines).strip()
 
     def _add(self, role: str, content: str) -> None:
