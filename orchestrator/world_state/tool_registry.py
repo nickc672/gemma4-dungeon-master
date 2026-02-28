@@ -22,7 +22,18 @@ from .turn_tools import (
     set_todo_item_status,
     set_turn_todo,
 )
-from .world_model_tools import WORLD_MODEL_TOOL_DEFINITIONS, execute_world_model_tool
+from .world_model_tools import (
+    WORLD_MODEL_TOOL_DEFINITIONS,
+    execute_world_model_tool,
+    get_world_entity,
+    get_world_item,
+    get_world_location,
+    get_world_scene,
+    get_world_story,
+    list_world_entities,
+    list_world_items,
+    list_world_locations,
+)
 
 
 RuntimeToolHandler = Callable[..., dict[str, Any]]
@@ -44,7 +55,32 @@ RUNTIME_TOOL_HANDLERS: Dict[str, RuntimeToolHandler] = {
     "roll_dice": roll_dice,
     "skill_check": skill_check,
     "get_recent_skill_checks": get_recent_skill_checks,
+    "get_world_story": get_world_story,
+    "list_world_locations": list_world_locations,
+    "get_world_location": get_world_location,
+    "get_world_scene": get_world_scene,
+    "list_world_entities": list_world_entities,
+    "get_world_entity": get_world_entity,
+    "list_world_items": list_world_items,
+    "get_world_item": get_world_item,
 }
+
+WORLD_MODEL_READ_TOOL_NAMES = (
+    "get_world_story",
+    "list_world_locations",
+    "get_world_location",
+    "get_world_scene",
+    "list_world_entities",
+    "get_world_entity",
+    "list_world_items",
+    "get_world_item",
+)
+
+WORLD_MODEL_READ_TOOL_DEFINITIONS = [
+    tool
+    for tool in WORLD_MODEL_TOOL_DEFINITIONS
+    if tool.get("function", {}).get("name") in WORLD_MODEL_READ_TOOL_NAMES
+]
 
 TOOL_DEFINITION_GROUPS = {
     "turn": TURN_TODO_TOOL_DEFINITIONS,
@@ -52,6 +88,7 @@ TOOL_DEFINITION_GROUPS = {
     "scene": SCENE_TOOL_DEFINITIONS,
     "entity": ENTITY_TOOL_DEFINITIONS,
     "mechanics": MECHANICS_TOOL_DEFINITIONS,
+    "world": WORLD_MODEL_READ_TOOL_DEFINITIONS,
 }
 
 TOOL_NAMES_BY_GROUP = {
@@ -67,6 +104,7 @@ TOOL_DEFINITIONS = [
     *TOOL_DEFINITION_GROUPS["scene"],
     *TOOL_DEFINITION_GROUPS["entity"],
     *TOOL_DEFINITION_GROUPS["mechanics"],
+    *TOOL_DEFINITION_GROUPS["world"],
 ]
 
 
@@ -96,6 +134,8 @@ __all__ = [
     "TURN_TODO_TOOL_DEFINITIONS",
     "VALIDATE_TOOLS",
     "WORLD_MODEL_TOOL_DEFINITIONS",
+    "WORLD_MODEL_READ_TOOL_DEFINITIONS",
+    "WORLD_MODEL_READ_TOOL_NAMES",
     "WORLD_MODEL_TOOL_NAMES",
     "execute_tool",
     "execute_world_model_tool",

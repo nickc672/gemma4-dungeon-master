@@ -204,8 +204,6 @@ def _dot_escape(value: str) -> str:
 def _build_world_state_dot(snapshot: Dict[str, Any]) -> str:
     nodes = snapshot.get("nodes") or []
     edges = snapshot.get("edges") or []
-    active = set(snapshot.get("active_keys") or [])
-    focus = set(snapshot.get("focus") or [])
 
     lines = [
         "graph WorldState {",
@@ -219,12 +217,13 @@ def _build_world_state_dot(snapshot: Dict[str, Any]) -> str:
         if not key:
             continue
         label = _dot_escape(key)
-        if key in focus:
+        flags = node.get("flags") or {}
+        if flags.get("current_location"):
             fill = "#f4d35e"
             font = "#1f2328"
             pen = "#b08900"
             penwidth = 2.4
-        elif key in active:
+        elif flags.get("in_scene"):
             fill = "#61c9a8"
             font = "#0b1a15"
             pen = "#2f7f64"
@@ -386,8 +385,10 @@ def main() -> None:
                 f"**Beat:** {beat.get('current_index', 0) + 1} "
                 f"of {beat.get('total', 0)} - {beat.get('current', '')}"
             )
-            st.markdown(f"**Focus:** {', '.join(snapshot.get('focus') or []) or 'None'}")
-            st.markdown(f"**Active keys:** {', '.join(snapshot.get('active_keys') or []) or 'None'}")
+            st.markdown(f"**Current location:** {snapshot.get('current_location') or 'Unknown'}")
+            scene = snapshot.get("scene") or {}
+            st.markdown(f"**Actors here:** {', '.join(scene.get('actors_here') or []) or 'None'}")
+            st.markdown(f"**Items here:** {', '.join(scene.get('items_here') or []) or 'None'}")
             st.markdown(f"**Story status:** {snapshot.get('story_status') or 'Not set'}")
             summary = snapshot.get("session_summary") or ""
             if summary:
@@ -399,7 +400,7 @@ def main() -> None:
         if snapshot.get("nodes"):
             graph_dot = _build_world_state_dot(snapshot)
             st.graphviz_chart(graph_dot, use_container_width=True)
-            st.caption("Gold = focus. Teal = active. Gray = inactive.")
+            st.caption("Gold = current location. Teal = current scene. Gray = elsewhere.")
         else:
             st.markdown("No world-state data yet.")
 

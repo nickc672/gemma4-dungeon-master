@@ -244,37 +244,6 @@ class WorldModel:
             "items_here": [item.key for item in self.items_at(location.key)],
         }
 
-    def active_context_keys(self, focus_keys: list[str], explicit_keys: list[str] | None = None, limit: int = 14) -> list[str]:
-        focus = [key for key in focus_keys if self.has_key(key)]
-        if not focus and self.starting_location:
-            focus = [self.starting_location]
-
-        active: list[str] = []
-
-        def add(key: str) -> None:
-            cleaned = str(key or "").strip()
-            if cleaned and self.has_key(cleaned) and cleaned not in active:
-                active.append(cleaned)
-
-        for key in focus:
-            add(key)
-
-        location_key = self.location_for_key(focus[0]) if focus else self.starting_location
-        if location_key:
-            scene = self.scene_snapshot(location_key)
-            add(str(scene.get("location") or ""))
-            for key in scene.get("connections", []):
-                add(str(key))
-            for key in scene.get("actors_here", []):
-                add(str(key))
-            for key in scene.get("items_here", []):
-                add(str(key))
-
-        for key in explicit_keys or []:
-            add(key)
-
-        return active[: max(1, int(limit))]
-
     def graph_nodes(self) -> list[dict[str, Any]]:
         nodes: list[dict[str, Any]] = []
         for location in sorted(self.locations.values(), key=lambda value: value.key.lower()):

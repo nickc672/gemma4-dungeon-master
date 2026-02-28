@@ -167,8 +167,7 @@ def get_turn_progress(
         "phase": str(ctx.get("phase", "")),
         "todo_revision": int(ctx.get("todo_revision", 0)),
         "todo_counts": _compute_turn_todo_counts(ctx),
-        "current_focus": list(ctx.get("current_focus", [])),
-        "active_keys": list(ctx.get("active_keys", [])),
+        "current_location": str(ctx.get("current_location", "")),
         "player_location": getattr(game_state, "player_location", ""),
     }
 

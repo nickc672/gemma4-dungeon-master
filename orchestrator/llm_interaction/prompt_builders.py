@@ -2,21 +2,14 @@ from __future__ import annotations
 
 import textwrap
 from dataclasses import dataclass, field
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
-
-# -------------------------
-# Shared Prompt State
-# -------------------------
 
 @dataclass
 class PromptState:
-    """holds a snapshot of story/game state used for building prompts.
-    Instead of passing 10+ parameters everywhere, it provides
-    a single structured object that prompt builders consume."""
+    """Structured prompt context derived from the current runtime world state."""
+
     history_text: str
-    active_keys: List[str]
-    focus: List[str]
     beat_current: str
     beat_next: str
     beat_guide: str
@@ -24,11 +17,13 @@ class PromptState:
     session_summary: str
     intent: Dict[str, Any]
     player_input: str
+    current_location: str
+    scene_description: str
+    connected_locations: List[str] = field(default_factory=list)
+    scene_actors: List[str] = field(default_factory=list)
+    scene_items: List[str] = field(default_factory=list)
     entity_info: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
-# -------------------------
-# Helpers
-# -------------------------
 
 def _format_intent(intent: Dict[str, Any]) -> str:
     action = intent.get("action") or ""
@@ -44,10 +39,6 @@ def _format_intent(intent: Dict[str, Any]) -> str:
     )
 
 
-def _current_location(state: PromptState) -> str:
-    return state.focus[0] if state.focus else "Unknown"
-
-
 def _recent_history(history_text: str, limit_lines: int = 4) -> str:
     lines = [line.strip() for line in str(history_text or "").splitlines() if line.strip()]
     if not lines:
@@ -60,33 +51,38 @@ def _latest_recap(summary_text: str) -> str:
     return lines[-1] if lines else "None"
 
 
-def _scene_context(state: PromptState) -> tuple[list[str], list[str]]:
-    current_location = _current_location(state)
-    immediate_lines: list[str] = []
-    nearby_locations: list[str] = []
+def _format_lines(items: List[str], *, empty: str) -> str:
+    cleaned = [str(item).strip() for item in items if str(item).strip()]
+    if not cleaned:
+        return f"- {empty}"
+    return "\n".join(f"- {item}" for item in cleaned)
 
+
+def _scene_snapshot_block(state: PromptState) -> str:
+    return (
+        f"Current Location: {state.current_location or 'Unknown'}\n"
+        f"Scene Description: {state.scene_description or 'Unknown location'}\n"
+        f"Actors Here:\n{_format_lines(state.scene_actors, empty='None noted')}\n"
+        f"Items Here:\n{_format_lines(state.scene_items, empty='None noted')}\n"
+        f"Connected Locations:\n{_format_lines(state.connected_locations, empty='None noted')}"
+    )
+
+
+def _entity_info_block(state: PromptState) -> str:
+    if not state.entity_info:
+        return "  None"
+
+    lines: list[str] = []
     for key in sorted(state.entity_info):
         info = state.entity_info[key]
-        node_type = info.get("node_type", "unknown")
-        location = info.get("location", "unknown")
-        if key == current_location or location == current_location:
-            if key != current_location:
-                immediate_lines.append(f"- {key} ({node_type})")
-            continue
-        if node_type == "location":
-            nearby_locations.append(f"- {key}")
+        parts = [f"  {key}:"]
+        for label in ("node_type", "location", "connections", "inventory", "holder", "flags"):
+            value = str(info.get(label, "")).strip()
+            if value:
+                parts.append(f"    {label}: {value}")
+        lines.append("\n".join(parts))
+    return "\n".join(lines)
 
-    if not immediate_lines:
-        immediate_lines = ["- None noted"]
-    if not nearby_locations:
-        nearby_locations = ["- None"]
-
-    return immediate_lines, nearby_locations[:6]
-
-
-# -------------------------
-# Prompt Builders
-# -------------------------
 
 def build_intent_prompt(history_text: str, player_input: str) -> str:
     return textwrap.dedent(
@@ -100,25 +96,7 @@ def build_intent_prompt(history_text: str, player_input: str) -> str:
     ).strip()
 
 
-def build_focus_prompt(state: PromptState) -> str:
-    keys = ", ".join(state.active_keys)
-    return textwrap.dedent(
-        f"""
-        # Intent
-        {_format_intent(state.intent)}
-
-        # Available Nodes
-        {keys}
-
-        # Player Input
-        {state.player_input}
-        """
-    ).strip()
-
-
 def build_plan_prompt(state: PromptState) -> str:
-    keys = ", ".join(state.active_keys)
-
     return textwrap.dedent(
         f"""
         # Intent
@@ -129,11 +107,10 @@ def build_plan_prompt(state: PromptState) -> str:
         Next: {state.beat_next}
         Guide: {state.beat_guide}
 
-        # Scene
-        Location/Focus: {', '.join(state.focus) or 'None'}
-        Relevant World Context Keys (not all are necessarily visible right now): {keys or 'None'}
+        # Current Scene
+        {_scene_snapshot_block(state)}
         Status: {state.story_status or 'Not set'}
-        Session Summary: {state.session_summary}
+        Session Summary: {state.session_summary or 'None'}
 
         # Recent Conversation
         {state.history_text or 'No prior conversation.'}
@@ -145,17 +122,13 @@ def build_plan_prompt(state: PromptState) -> str:
 
 
 def build_intent_phase_prompt(state: PromptState) -> str:
-    current_location = _current_location(state)
-    immediate_lines, nearby_locations = _scene_context(state)
     return (
         f"# Player Request\n"
         f"{state.player_input}\n\n"
         f"# Parsed Intent\n"
         f"{_format_intent(state.intent)}\n\n"
-        f"# Scene Snapshot\n"
-        f"Current Location: {current_location}\n"
-        f"Immediate Context:\n{chr(10).join(immediate_lines)}\n"
-        f"Nearby Known Locations:\n{chr(10).join(nearby_locations)}\n\n"
+        f"# Current Scene\n"
+        f"{_scene_snapshot_block(state)}\n\n"
         f"# Session Recap\n"
         f"{_latest_recap(state.session_summary)}\n\n"
         f"# Recent Conversation\n"
@@ -164,25 +137,6 @@ def build_intent_phase_prompt(state: PromptState) -> str:
 
 
 def build_validate_prompt(state: PromptState, plan: str) -> str:
-    keys = ", ".join(state.active_keys)
-
-    # entity info block 
-    entity_lines = []
-    for key, info in state.entity_info.items():
-        parts = [f"  {key}:"]
-        if info.get("location"):
-            parts.append(f"    location: {info['location']}")
-        if info.get("status"):
-            parts.append(f"    status: {info['status']}")
-        if info.get("node_type"):
-            parts.append(f"    type: {info['node_type']}")
-        if info.get("connections"):
-            parts.append(f"    connections: {info['connections']}")
-        entity_lines.append("\n".join(parts))
-
-    entity_block = "\n".join(entity_lines) if entity_lines else "  None"
-
-
     return textwrap.dedent(
         f"""
         # Intent
@@ -193,11 +147,10 @@ def build_validate_prompt(state: PromptState, plan: str) -> str:
         Next: {state.beat_next}
         Guide: {state.beat_guide}
 
-        # Scene
-        Location/Focus: {', '.join(state.focus) or 'None'}
-        Active Context Keys: {keys or 'None'}
+        # Current Scene
+        {_scene_snapshot_block(state)}
         Status: {state.story_status or 'Not set'}
-        Session Summary: {state.session_summary}
+        Session Summary: {state.session_summary or 'None'}
 
         # Recent Conversation
         {state.history_text or 'No prior conversation.'}
@@ -206,11 +159,10 @@ def build_validate_prompt(state: PromptState, plan: str) -> str:
         {state.player_input}
 
         # Entity Information
-        {entity_block}
-        
+        {_entity_info_block(state)}
+
         # Proposed Plan
         {plan}
-
         """
     ).strip()
 
@@ -220,32 +172,22 @@ def build_narrate_prompt(
     plan: str,
     verdict: str,
     notes: str,
-    action_results: list[dict] = None,
+    action_results: list[dict] | None = None,
 ) -> str:
-    """Build the narration prompt with action results."""
-
-    current_location = _current_location(state)
-    immediate_context_lines, nearby_locations = _scene_context(state)
-
     action_summary = ""
     if action_results:
-        action_summary = "\n\n# Actions Executed\n"
+        lines = []
         for tool_call in action_results:
-            result = tool_call["result"]
-            if result.get("success"):
-                action_summary += f"{tool_call['name']}: {result.get('reason', 'Success')}\n"
-            else:
-                action_summary += f"{tool_call['name']}: {result.get('reason', 'Failed')}\n"
-    
+            result = dict(tool_call.get("result") or {})
+            reason = str(result.get("reason") or result.get("message") or "").strip()
+            lines.append(f"- {tool_call.get('name')}: {reason or ('Success' if result.get('success') else 'Failed')}")
+        action_summary = "\n\n# Actions Executed\n" + "\n".join(lines)
+
     return f"""# Player Request
 {state.player_input}
 
 # Current Scene
-Player's Current Location: {current_location}
-Immediate Context:
-{chr(10).join(immediate_context_lines)}
-Nearby Known Locations:
-{chr(10).join(nearby_locations)}
+{_scene_snapshot_block(state)}
 
 # Session Recap
 {_latest_recap(state.session_summary)}
@@ -261,7 +203,7 @@ Mechanics Summary: {notes}
 
 ---
 
-Now generate a DM response to the player's latest input using the CURRENT story context above.
+Now generate a DM response to the player's latest input using the current scene and resolved turn state above.
 """
 
 
@@ -270,9 +212,11 @@ def build_mechanics_phase_prompt(
     intent_summary: str,
     todo_items: list[dict[str, Any]],
 ) -> str:
-    current_location = _current_location(state)
-    immediate_lines, nearby_locations = _scene_context(state)
-    todo_lines = [f"- {str(item.get('task', '')).strip()}" for item in todo_items if str(item.get("task", "")).strip()]
+    todo_lines = [
+        f"- {str(item.get('task', '')).strip()}"
+        for item in todo_items
+        if str(item.get("task", "")).strip()
+    ]
     if not todo_lines:
         todo_lines = [f"- Resolve the player's declared action in context: {state.player_input}"]
     return (
@@ -280,10 +224,8 @@ def build_mechanics_phase_prompt(
         f"{state.player_input}\n\n"
         f"# Parsed Intent\n"
         f"{_format_intent(state.intent)}\n\n"
-        f"# Scene Snapshot\n"
-        f"Current Location: {current_location}\n"
-        f"Immediate Context:\n{chr(10).join(immediate_lines)}\n"
-        f"Nearby Known Locations:\n{chr(10).join(nearby_locations)}\n\n"
+        f"# Current Scene\n"
+        f"{_scene_snapshot_block(state)}\n\n"
         f"# Intent Summary\n"
         f"{intent_summary or 'Resolve the player request directly and only use tools if needed.'}\n\n"
         f"# Turn Todo\n"
@@ -294,21 +236,19 @@ def build_mechanics_phase_prompt(
 
 
 def build_status_prompt(state: PromptState) -> str:
-    keys = ", ".join(state.active_keys)
-
     return textwrap.dedent(
         f"""
-        Current Focus:
-        {', '.join(state.focus) or 'None'}
+        Current Location:
+        {state.current_location or 'Unknown'}
 
-        Active Context Keys:
-        {keys or 'None'}
+        Current Scene:
+        {_scene_snapshot_block(state)}
 
         Beat:
         {state.beat_current}
 
         Session Summary:
-        {state.session_summary}
+        {state.session_summary or 'None'}
 
         Conversation So Far:
         {state.history_text or 'No prior conversation.'}
@@ -317,8 +257,6 @@ def build_status_prompt(state: PromptState) -> str:
 
 
 def build_intro_prompt(state: PromptState) -> str:
-    keys = ", ".join(state.active_keys)
-
     return textwrap.dedent(
         f"""
         Starting State:
@@ -333,14 +271,11 @@ def build_intro_prompt(state: PromptState) -> str:
         Next Beat:
         {state.beat_next}
 
-        Focus:
-        {', '.join(state.focus) or 'None'}
-
-        Active Context Keys:
-        {keys or 'None'}
+        Starting Scene:
+        {_scene_snapshot_block(state)}
 
         Session Summary:
-        {state.session_summary}
+        {state.session_summary or 'None'}
 
         Conversation So Far:
         {state.history_text or 'No prior conversation.'}

@@ -58,8 +58,7 @@ def apply_turn_ctx_defaults(ctx: dict[str, Any]) -> dict[str, Any]:
     ctx.setdefault("todo_revision", 0)
     ctx.setdefault("todo_summary", "")
     ctx.setdefault("notes", [])
-    ctx.setdefault("current_focus", [])
-    ctx.setdefault("active_keys", [])
+    ctx.setdefault("current_location", "")
     return ctx
 
 

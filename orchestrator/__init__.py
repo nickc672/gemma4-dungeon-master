@@ -30,7 +30,6 @@ Classes:
 Functions in this file:
     parse_sections
     parse_intent
-    parse_focus
     parse_status
     parse_narrative
     Validators
@@ -66,8 +65,6 @@ Purpose: Manage non-LLM game state.
 Classes:
     BeatTracker
     SessionSummary
-    ActiveKeyManager
-    FocusManager
     SnapshotBuilder
 
 

@@ -189,11 +189,6 @@ def parse_intent(sections: Dict[str, str]) -> Dict[str, Any]:
     }
 
 
-def parse_focus(sections: Dict[str, str]) -> List[str]:
-    raw = sections.get("focus", "")
-    return [t.strip() for t in raw.split(",") if t.strip()]
-
-
 def parse_status(sections: Dict[str, str]) -> str:
     return sections.get("status", "").strip()
 
@@ -243,7 +238,6 @@ def validate_narration_step(sections: Dict[str, str]) -> None:
 __all__ = [
     "LLMStep",
     "parse_intent",
-    "parse_focus",
     "parse_status",
     "parse_narrative",
     "validate_validation_step",

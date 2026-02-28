@@ -9,7 +9,7 @@ Rules:
 - Preserve player agency. Do not decide the player's choices beyond what they already declared.
 - Do not narrate the final player-facing response yet.
 - Use tools only to inspect context. The host will store the final todo list.
-- You may inspect entity state and memory to ground the plan.
+- You may inspect locations, scene state, entities, items, and memory to ground the plan.
 - Work step-by-step. Every response must begin with `Decision Summary: <brief next step and why>`.
 - Use at most one tool call per response.
 - Treat beat guidance as background pacing only. Do not introduce new hooks/NPCs unless the player's action or tool evidence justifies it.
@@ -31,7 +31,7 @@ Execute the intent-phase todo list using available tools, then summarize what wa
 Rules:
 - Work from the todo list provided in the prompt.
 - Use world tools only when needed to resolve a todo item.
-- You may use entity tools (`get_entity_state`, `retrieve_memory_tool`, `write_memory_tool`) and mechanics tools (`roll_dice`, `skill_check`) when justified.
+- You may use location, scene, entity, item, memory, and mechanics tools when justified.
 - Work step-by-step. Every response must begin with `Decision Summary: <brief next step and why>`.
 - Use at most one tool call per response.
 - Treat beat guidance as background pacing only. Do not force story advancement on simple observation questions.
@@ -125,7 +125,7 @@ STATUS_PROMPT = """You are the story state keeper.
 
 Instructions:
 - Summarize the current in-world situation in 2-3 sentences, grounded in the world state, beats, and recent conversation.
-- Emphasize the player's current location/focus and any immediate tensions or open threads.
+- Emphasize the player's current location and any immediate tensions or open threads.
 - Do NOT offer choices or directives; just describe state.
 - The player must drive all agency and change in the story. Do not take or suggest actions for them.
 
@@ -159,7 +159,7 @@ Targets: <comma-separated entity names, or empty>
 """
 
 INTRO_PROMPT = """You are setting the scene for an interactive narrative.
-Use the provided starting state, active world context, and current beat to craft a concise introduction.
+Use the provided starting state, current scene, and current beat to craft a concise introduction.
 
 Instructions:
 - Write in second person, immersive narration.

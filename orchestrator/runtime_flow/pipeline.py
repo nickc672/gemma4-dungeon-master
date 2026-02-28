@@ -7,7 +7,7 @@ from ..app_config import (
     get_ollama_stage_options,
     get_roll_mode,
 )
-from .session_state import BeatTracker, SessionSummary, ActiveKeyManager, SnapshotBuilder
+from .session_state import BeatTracker, SessionSummary, SnapshotBuilder
 from .step_registry import build_steps
 from ..llm_interaction.prompt_builders import (
     PromptState,
@@ -126,9 +126,7 @@ class StoryEngine:
             player_entity.set_location(resolved_starting_location)
         self.game_state.player_location = resolved_starting_location
         self.game_state.discovered_keys = {resolved_starting_location}
-        self.current_focus = [resolved_starting_location]
         self.discovered_keys = self.game_state.discovered_keys
-        self.active_keys = set()
         get_runtime_world_model(self.game_state)
         self.roll_mode = (roll_mode or get_roll_mode()).strip().lower()
         if self.roll_mode not in {"auto", "manual"}:
@@ -148,51 +146,12 @@ class StoryEngine:
         )
 
         self.steps = build_steps()
-        self.active_manager = ActiveKeyManager()
         self.snapshot_builder = SnapshotBuilder()
-
-        self.active_keys = self.active_manager.refresh(
-            self.world,
-            self.current_focus,
-            beat_text=self.beats.current(),
-        )
 
     # -----------------------
 
     def _make_state(self, player_input, intent):
-        entity_info = {}
-        for key in self.active_keys:
-            location = self.world.get_location(key)
-            if location is not None:
-                info = {
-                    "node_type": "location",
-                    "connections": ", ".join(location.connections) if location.connections else "none",
-                    "location": location.key,
-                    "discovered": location.key in self.game_state.discovered_keys,
-                }
-            else:
-                entity = self.world.get_entity(key)
-                if entity is not None:
-                    info = {
-                        "node_type": entity.entity_type,
-                        "connections": "none",
-                        "location": entity.location,
-                    }
-                    if entity.inventory:
-                        info["inventory"] = ", ".join(entity.inventory)
-                else:
-                    item = self.world.get_item(key)
-                    if item is None:
-                        continue
-                    info = {
-                        "node_type": "item",
-                        "connections": "none",
-                        "location": self.world.location_for_key(item.key) or item.holder_key,
-                    }
-                    if item.holder_kind == "entity":
-                        info["holder"] = item.holder_key
-
-            #any relevant quest flags for this entity
+        def apply_relevant_flags(key: str, info: Dict[str, str]) -> Dict[str, str]:
             relevant_flags = {
                 flag: val
                 for flag, val in self.game_state.quest_flags.items()
@@ -200,15 +159,68 @@ class StoryEngine:
             }
             if relevant_flags:
                 info["flags"] = ", ".join(
-                    f"{k}={'yes' if v else 'no'}" for k, v in relevant_flags.items()
+                    f"{name}={'yes' if value else 'no'}" for name, value in relevant_flags.items()
                 )
+            return info
 
-            entity_info[key] = info
+        current_location = self.game_state.player_location
+        scene = self.world.scene_snapshot(current_location)
+        scene_actors = [
+            key
+            for key in scene.get("actors_here", [])
+            if str(key).strip() and str(key).strip().lower() != "player"
+        ]
+        scene_items = [str(key).strip() for key in scene.get("items_here", []) if str(key).strip()]
+        connected_locations = [str(key).strip() for key in scene.get("connections", []) if str(key).strip()]
+
+        entity_info: dict[str, dict[str, str]] = {}
+
+        location = self.world.get_location(current_location)
+        if location is not None:
+            entity_info[location.key] = apply_relevant_flags(location.key, {
+                "node_type": "location",
+                "connections": ", ".join(location.connections) if location.connections else "none",
+                "location": location.key,
+                "discovered": "yes" if location.key in self.game_state.discovered_keys else "no",
+            })
+
+        for key in connected_locations:
+            adjacent = self.world.get_location(key)
+            if adjacent is None:
+                continue
+            entity_info[adjacent.key] = apply_relevant_flags(adjacent.key, {
+                "node_type": "location",
+                "connections": ", ".join(adjacent.connections) if adjacent.connections else "none",
+                "location": adjacent.key,
+                "discovered": "yes" if adjacent.key in self.game_state.discovered_keys else "no",
+            })
+
+        for key in scene_actors:
+            entity = self.world.get_entity(key)
+            if entity is None:
+                continue
+            info = {
+                "node_type": entity.entity_type,
+                "location": entity.location,
+            }
+            if entity.inventory:
+                info["inventory"] = ", ".join(entity.inventory)
+            entity_info[entity.key] = apply_relevant_flags(entity.key, info)
+
+        for key in scene_items:
+            item = self.world.get_item(key)
+            if item is None:
+                continue
+            info = {
+                "node_type": "item",
+                "location": self.world.location_for_key(item.key) or item.holder_key,
+            }
+            if item.holder_kind == "entity":
+                info["holder"] = item.holder_key
+            entity_info[item.key] = apply_relevant_flags(item.key, info)
 
         return PromptState(
             history_text=self.history.as_text(limit=4),
-            active_keys=sorted(self.active_keys),
-            focus=self.current_focus,
             beat_current=self.beats.progress_text(),
             beat_next=self.beats.next() or "None",
             beat_guide=", ".join(self.beats.beats),
@@ -216,6 +228,11 @@ class StoryEngine:
             session_summary=self.summary.text(),
             intent=intent,
             player_input=player_input,
+            current_location=current_location,
+            scene_description=str(scene.get("description") or "Unknown location"),
+            connected_locations=connected_locations,
+            scene_actors=scene_actors,
+            scene_items=scene_items,
             entity_info=entity_info,
         )
 
@@ -243,25 +260,22 @@ class StoryEngine:
             trace["INTENT_PARSE"] = intent_debug
 
         # -----------------------
-        # REFRESH ACTIVE KEYS + BUILD STATE SNAPSHOT
+        # BUILD STATE SNAPSHOT
         # -----------------------
 
-        self.active_keys = self.active_manager.refresh(
-            self.world,
-            self.current_focus,
-            beat_text=self.beats.current(),
-        )
-
         state = self._make_state(player_input, intent)
-
         def build_state_snapshot():
+            scene = self.world.scene_snapshot(self.game_state.player_location)
             return {
                 "beat_current": state.beat_current,
                 "beat_next": state.beat_next,
                 "beat_guide": state.beat_guide,
                 "scene": {
-                    "location_focus": state.focus,
-                    "active_nodes": sorted(self.active_keys),
+                    "current_location": state.current_location,
+                    "description": state.scene_description,
+                    "connections": list(scene.get("connections", [])),
+                    "actors_here": list(scene.get("actors_here", [])),
+                    "items_here": list(scene.get("items_here", [])),
                     "status": state.story_status,
                     "session_summary": state.session_summary,
                 },
@@ -284,8 +298,7 @@ class StoryEngine:
             "mechanics_summary": "",
             "mechanics_status": "",
             "all_world_tool_calls": [],
-            "current_focus": list(self.current_focus),
-            "active_keys": sorted(self.active_keys),
+            "current_location": self.game_state.player_location,
         }
         action_tool_calls: List[Dict[str, Any]] = []
         bind_turn_orchestration_ctx(self.game_state, turn_ctx)
@@ -298,6 +311,13 @@ class StoryEngine:
 
         phase_tool_names = {
             "intent": [
+                "get_world_scene",
+                "get_world_location",
+                "list_world_locations",
+                "list_world_entities",
+                "get_world_entity",
+                "list_world_items",
+                "get_world_item",
                 "check_can_interact",
                 "get_current_context",
                 "list_scene_entities",
@@ -305,6 +325,13 @@ class StoryEngine:
                 "retrieve_memory_tool",
             ],
             "mechanics": [
+                "get_world_scene",
+                "get_world_location",
+                "list_world_locations",
+                "list_world_entities",
+                "get_world_entity",
+                "list_world_items",
+                "get_world_item",
                 "check_can_interact",
                 "get_current_context",
                 "list_scene_entities",
@@ -344,8 +371,7 @@ class StoryEngine:
 
         def phase_tool_executor(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             args = dict(arguments or {})
-            turn_ctx["current_focus"] = list(self.current_focus)
-            turn_ctx["active_keys"] = sorted(self.active_keys)
+            turn_ctx["current_location"] = self.game_state.player_location
 
             # Hidden runtime behavior: in manual roll mode, the CLI can supply the player's d20
             # while the model still calls the same `skill_check` tool and receives a normal result.
@@ -386,16 +412,7 @@ class StoryEngine:
                 })
 
             if tool_name in {"move_to_location", "move_npc"} and result.get("success"):
-                new_location = self.game_state.player_location
-                if isinstance(new_location, str) and new_location:
-                    self.current_focus = [new_location]
-                self.active_keys = self.active_manager.refresh(
-                    self.world,
-                    self.current_focus,
-                    beat_text=self.beats.current(),
-                )
-                turn_ctx["current_focus"] = list(self.current_focus)
-                turn_ctx["active_keys"] = sorted(self.active_keys)
+                turn_ctx["current_location"] = self.game_state.player_location
 
             return result
 
@@ -552,8 +569,8 @@ class StoryEngine:
         if self.adapter.verbose:
             print("\n[STATE] Rebuilding state with updated game state")
             print(f"[STATE] Player location: {self.game_state.player_location}")
-            print(f"[STATE] Current focus: {self.current_focus}")
-            print(f"[STATE] Active keys: {sorted(self.active_keys)}")
+            print(f"[STATE] Scene actors: {state.scene_actors}")
+            print(f"[STATE] Scene items: {state.scene_items}")
 
         state = self._make_state(player_input, intent)
 
@@ -595,9 +612,8 @@ class StoryEngine:
             "narration": {"ic": narrative},
             "intent": intent,
             "beat": self.beats.current(),
-            "active_keys": sorted(self.active_keys),
-            "focus": self.current_focus,
             "player_location": self.game_state.player_location,
+            "scene": self.world.scene_snapshot(self.game_state.player_location),
             "tool_calls": action_tool_calls,
             "turn_todo": json.loads(json.dumps(turn_ctx["todo"])),
             "phase_summaries": {
@@ -638,11 +654,10 @@ class StoryEngine:
 
     # -----------------------
     def generate_intro(self):
+        intro_scene = self.world.scene_snapshot(self.game_state.player_location)
 
         state = PromptState(
             history_text=self.history.as_text(limit=4),
-            active_keys=sorted(self.active_keys),
-            focus=self.current_focus,
             beat_current=self.beats.progress_text(),
             beat_next=self.beats.next() or "None",
             beat_guide=", ".join(self.beats.beats),
@@ -650,6 +665,15 @@ class StoryEngine:
             session_summary=self.summary.text(),
             intent={},
             player_input="",
+            current_location=self.game_state.player_location,
+            scene_description=str(intro_scene.get("description") or "Unknown location"),
+            connected_locations=list(intro_scene.get("connections", [])),
+            scene_actors=[
+                key
+                for key in intro_scene.get("actors_here", [])
+                if str(key).strip().lower() != "player"
+            ],
+            scene_items=list(intro_scene.get("items_here", [])),
             entity_info={},
         )
 

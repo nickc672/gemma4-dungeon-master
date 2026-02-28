@@ -82,8 +82,10 @@ def print_llm_verbose(turn_number: int, trace: Dict[str, Any]) -> None:
 
         scene = state_before.get("scene", {})
         print("\nScene:")
-        print(f"Location/Focus: {scene.get('location_focus')}")
-        print(f"Active Context Keys: {scene.get('active_nodes')}")
+        print(f"Current Location: {scene.get('current_location')}")
+        print(f"Connections: {scene.get('connections')}")
+        print(f"Actors Here: {scene.get('actors_here')}")
+        print(f"Items Here: {scene.get('items_here')}")
         print(f"Status: {scene.get('status')}")
         print(
             f"Session Summary: "
@@ -101,8 +103,10 @@ def print_llm_verbose(turn_number: int, trace: Dict[str, Any]) -> None:
         
         scene = state_after_action.get("scene", {})
         print("\nScene:")
-        print(f"Location/Focus: {scene.get('location_focus')}")
-        print(f"Active Context Keys: {scene.get('active_nodes')}")
+        print(f"Current Location: {scene.get('current_location')}")
+        print(f"Connections: {scene.get('connections')}")
+        print(f"Actors Here: {scene.get('actors_here')}")
+        print(f"Items Here: {scene.get('items_here')}")
         print("-" * 60)
 
     # -------------------------
@@ -304,8 +308,10 @@ def print_llm_verbose(turn_number: int, trace: Dict[str, Any]) -> None:
 
         scene = state_after.get("scene", {})
         print("\nScene:")
-        print(f"Location/Focus: {scene.get('location_focus')}")
-        print(f"Active Context Keys: {scene.get('active_nodes')}")
+        print(f"Current Location: {scene.get('current_location')}")
+        print(f"Connections: {scene.get('connections')}")
+        print(f"Actors Here: {scene.get('actors_here')}")
+        print(f"Items Here: {scene.get('items_here')}")
         print(f"Status: {scene.get('status')}")
         print(
             f"Session Summary: "

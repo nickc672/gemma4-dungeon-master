@@ -1,7 +1,6 @@
 from .step import (
     LLMStep,
     parse_intent,
-    parse_focus,
     parse_status,
     parse_narrative,
     validate_validation_step,
@@ -29,15 +28,6 @@ def build_steps():
             max_attempts=3,
             parser=parse_intent,
         ),
-
-        "focus": LLMStep(
-            name="focus",
-            system_prompt="",
-            tags={"focus"},
-            use_cot=False,
-            parser=parse_focus,
-        ),
-
         "plan": LLMStep(
             name="plan",
             system_prompt=PLAN_PROMPT,
