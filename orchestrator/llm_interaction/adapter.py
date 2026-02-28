@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import logging
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Union
@@ -51,7 +52,7 @@ class LLMAdapter:
 
         for attempt in range(1, self.max_attempts + 1):
             if self.verbose:
-                print(f"[LLM] Attempt {attempt} for stage '{stage}'")
+                print(f"[LLM] Transport attempt {attempt} for stage '{stage}'")
 
             try:
                 response = ollama.chat(model=self.model, messages=messages, options=options)
@@ -320,7 +321,7 @@ class LLMAdapter:
     ) -> Any:
         for attempt in range(1, self.max_attempts + 1):
             if self.verbose:
-                print(f"[LLM] Attempt {attempt} for stage '{stage}'")
+                print(f"[LLM] Transport attempt {attempt} for stage '{stage}'")
             try:
                 return ollama.chat(
                     model=self.model,
@@ -403,6 +404,7 @@ class LLMAdapter:
         max_iterations: int = 10,
         pre_tool_use: Optional[Callable[[str, Dict[str, Any]], Dict[str, Any]]] = None,
         post_tool_use: Optional[Callable[[str, Dict[str, Any], Dict[str, Any]], Optional[str]]] = None,
+        assistant_response_hook: Optional[Callable[[str, Sequence[Dict[str, Any]], int], Optional[str]]] = None,
         stop_hook: Optional[Callable[[str, bool], Optional[str]]] = None,
     ) -> Dict[str, Any]:
         """
@@ -416,6 +418,8 @@ class LLMAdapter:
         stop_hook_active = False
 
         for iteration in range(1, max_iterations + 1):
+            if self.verbose:
+                print(f"[LOOP] {stage} iteration {iteration}")
             response = self.request_with_tools(
                 stage=stage,
                 system_prompt=system_prompt,
@@ -435,7 +439,7 @@ class LLMAdapter:
                     {
                         "id": call["id"],
                         "name": call["name"],
-                        "arguments": call["arguments"],
+                        "arguments": copy.deepcopy(call["arguments"]),
                     }
                     for call in tool_calls
                 ],
@@ -444,6 +448,25 @@ class LLMAdapter:
                 "hook_notes": [],
             }
             rounds.append(round_info)
+
+            if assistant_response_hook:
+                response_block_reason = assistant_response_hook(
+                    assistant_text,
+                    round_info["tool_calls"],
+                    iteration,
+                )
+                if response_block_reason:
+                    round_info["response_block_reason"] = response_block_reason
+                    convo_messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "Your last response was invalid for this phase: "
+                                f"{response_block_reason} Re-respond and follow the required structure."
+                            ),
+                        }
+                    )
+                    continue
 
             if not tool_calls:
                 stop_reason = stop_hook(assistant_text, stop_hook_active) if stop_hook else None
@@ -501,20 +524,20 @@ class LLMAdapter:
                     try:
                         tool_result = tool_executor(tool_name, arguments)
                         if isinstance(tool_result, dict):
-                            tool_payload = dict(tool_result)
+                            tool_payload = copy.deepcopy(tool_result)
                         else:
-                            tool_payload = {"ok": True, "result": tool_result}
+                            tool_payload = {"ok": True, "result": copy.deepcopy(tool_result)}
                     except Exception as exc:
                         tool_payload = {"ok": False, "error": str(exc)}
 
                 tool_entry = {
                     "iteration": iteration,
                     "name": tool_name,
-                    "arguments": arguments,
-                    "result": tool_payload,
+                    "arguments": copy.deepcopy(arguments),
+                    "result": copy.deepcopy(tool_payload),
                 }
                 round_info["tool_results"].append(tool_entry)
-                tool_trace.append(tool_entry)
+                tool_trace.append(copy.deepcopy(tool_entry))
 
                 convo_messages.append(
                     {

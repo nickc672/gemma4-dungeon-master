@@ -1,0 +1,103 @@
+[
+  {
+    "key": "Bronze Fountain Coin",
+    "name": "Bronze Fountain Coin",
+    "description": "A battered bronze coin wedged between the stones of the central fountain.",
+    "holder_kind": "location",
+    "holder_key": "Town Square",
+    "portable": true,
+    "tags": [
+      "coin"
+    ]
+  },
+  {
+    "key": "Carved Driftwood Charm",
+    "name": "Carved Driftwood Charm",
+    "description": "A piece of pale driftwood carved into the shape of a curling wave, hung on a faded blue cord. It smells faintly of incense and sea-salt.",
+    "holder_kind": "location",
+    "holder_key": "Old Shrine",
+    "portable": true,
+    "tags": []
+  },
+  {
+    "key": "Cracked Spyglass",
+    "name": "Cracked Spyglass",
+    "description": "A once-fine brass spyglass with a hairline crack across one lens. It smells faintly of salt and oil and bears tiny etchings matching the town's crest.",
+    "holder_kind": "location",
+    "holder_key": "Harbor Gate",
+    "portable": true,
+    "tags": []
+  },
+  {
+    "key": "Frayed Mooring Rope",
+    "name": "Frayed Mooring Rope",
+    "description": "A length of mooring rope stained a darker color near one end. Up close, the fibers look as though they were cut more than worn through by the sea.",
+    "holder_kind": "location",
+    "holder_key": "Docks",
+    "portable": true,
+    "tags": [
+      "clue"
+    ]
+  },
+  {
+    "key": "Guard's Lost Signet",
+    "name": "Guard's Lost Signet",
+    "description": "A small silver signet ring bearing the town's crest, scuffed as though it has been dragged along stone. It looks recently dropped.",
+    "holder_kind": "location",
+    "holder_key": "Watch Barracks",
+    "portable": true,
+    "tags": []
+  },
+  {
+    "key": "Hidden Alley Knife",
+    "name": "Hidden Alley Knife",
+    "description": "A narrow-bladed knife tucked behind a loose brick at knee height. Its handle is wrapped in worn blue cloth, and a faint rust stain darkens the edge.",
+    "holder_kind": "location",
+    "holder_key": "East Alley",
+    "portable": true,
+    "tags": []
+  },
+  {
+    "key": "Hidden Scrap",
+    "name": "Hidden Scrap",
+    "description": "A grease-stained note tucked behind a loose crate: 'cellar restock / upstairs lock is our wedding anniversary date'.",
+    "holder_kind": "location",
+    "holder_key": "Bar Counter",
+    "portable": true,
+    "tags": [
+      "clue"
+    ]
+  },
+  {
+    "key": "Salt-Stained Prayer Beads",
+    "name": "Salt-Stained Prayer Beads",
+    "description": "A loop of smooth wooden beads, crusted with a thin line of salt where they rest against wet robes. Some of the beads are carved with tiny wave symbols.",
+    "holder_kind": "location",
+    "holder_key": "Temple of the Tide",
+    "portable": true,
+    "tags": []
+  },
+  {
+    "key": "Smugglers' Ledger",
+    "name": "Smugglers' Ledger",
+    "description": "A slim ledger bound in cracked leather, its pages filled with coded notes about shipments, routes, and initials. A few entries are smudged with what looks like river-mud.",
+    "holder_kind": "location",
+    "holder_key": "Warehouse Row",
+    "portable": true,
+    "tags": [
+      "clue"
+    ]
+  },
+  {
+    "key": "Weathered Notice",
+    "name": "Weathered Notice",
+    "description": "A curling parchment describing strange lights and disturbances near the old well.",
+    "holder_kind": "location",
+    "holder_key": "Town Hall",
+    "portable": true,
+    "tags": [
+      "notice",
+      "lead"
+    ]
+  }
+]

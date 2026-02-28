@@ -111,17 +111,32 @@ class Entity:
     entity_type: str
     description: str
     location: str
+    inventory: List[str] = field(default_factory=list)
     skills: Dict[str, int] = field(default_factory=dict)
     stats: Dict[str, int] = field(default_factory=dict)
     memory: DynamicSentenceMemory = field(default_factory=DynamicSentenceMemory)
     tags: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def get_location(self) -> str:
         return self.location
 
     def set_location(self, location: str) -> None:
         self.location = str(location or "unknown")
+
+    def add_item(self, item_key: str) -> None:
+        key = str(item_key or "").strip()
+        if key and key not in self.inventory:
+            self.inventory.append(key)
+
+    def remove_item(self, item_key: str) -> None:
+        key = str(item_key or "").strip()
+        if not key:
+            return
+        self.inventory = [existing for existing in self.inventory if existing != key]
+
+    def has_item(self, item_key: str) -> bool:
+        key = str(item_key or "").strip()
+        return bool(key) and key in self.inventory
 
     def get_skill(self, skill: str, default: int | None = None) -> int | None:
         return self.skills.get(_norm(skill).replace(" ", "_"), default)
@@ -145,8 +160,8 @@ class Entity:
     def list_skill_names(self) -> List[str]:
         return sorted(self.skills.keys())
 
-    def to_public_view(self, *, include_memory_preview: bool = False, memory_preview: int = 3) -> dict[str, Any]:
-        payload = {
+    def to_record(self) -> dict[str, Any]:
+        return {
             "key": self.key,
             "name": self.name,
             "entity_type": self.entity_type,
@@ -155,7 +170,48 @@ class Entity:
             "skills": dict(self.skills),
             "stats": dict(self.stats),
             "tags": list(self.tags),
-            "metadata": dict(self.metadata),
+            "memory": list(self.memory.sentences),
+        }
+
+    @classmethod
+    def from_record(cls, payload: dict[str, Any]) -> "Entity":
+        entity_type = str(payload.get("entity_type", "npc")).strip().lower() or "npc"
+        skills = payload.get("skills") or {}
+        stats = payload.get("stats") or {}
+        entity = cls(
+            key=str(payload["key"]),
+            name=str(payload.get("name") or payload["key"]),
+            entity_type=entity_type,
+            description=str(payload.get("description") or ""),
+            location=str(payload.get("location") or "unknown"),
+            skills=dict(skills) if isinstance(skills, dict) else {},
+            stats=dict(stats) if isinstance(stats, dict) else {},
+            tags=[str(tag) for tag in payload.get("tags") or []],
+        )
+        for memory_line in payload.get("memory") or []:
+            text = str(memory_line).strip()
+            if text:
+                entity.add_memory(text)
+        if entity_type == "player":
+            if not entity.skills:
+                entity.skills = dict(DEFAULT_PLAYER_SKILLS)
+            if not entity.stats:
+                entity.stats = dict(DEFAULT_PLAYER_STATS)
+            if "player" not in entity.tags:
+                entity.tags.append("player")
+        return entity
+
+    def to_public_view(self, *, include_memory_preview: bool = False, memory_preview: int = 3) -> dict[str, Any]:
+        payload = {
+            "key": self.key,
+            "name": self.name,
+            "entity_type": self.entity_type,
+            "description": self.description,
+            "location": self.location,
+            "inventory": list(self.inventory),
+            "skills": dict(self.skills),
+            "stats": dict(self.stats),
+            "tags": list(self.tags),
             "memory_count": self.memory_count,
         }
         if include_memory_preview:

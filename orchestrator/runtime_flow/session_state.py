@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import List, Optional, Dict, Any, Iterable, Set
 import re
 
+from ..world_state.world_model import WorldModel
+
 
 # ================================
 # Beat Tracker
@@ -83,50 +85,28 @@ class ActiveKeyManager:
 
     def refresh(
         self,
-        story,
+        world: WorldModel,
         current_focus: List[str],
         explicit_keys: Optional[Iterable[str]] = None,
         beat_text: str = "",
     ) -> Set[str]:
-
-        explicit = {k for k in (explicit_keys or []) if k in story.by_key}
-        focus = [k for k in current_focus if k in story.by_key]
-
-        if not focus and story.initial_keys:
-            focus = [story.initial_keys[0]]
-
-        active: List[str] = []
-
-        def add(k: str):
-            if k and k in story.by_key and k not in active:
-                active.append(k)
-
-        for k in focus:
-            add(k)
-
-        for k in focus:
-            node = story.get_node(k)
-            if node:
-                for n in node.connections:
-                    add(n)
-
-        for k in explicit:
-            add(k)
-
+        active = world.active_context_keys(
+            focus_keys=list(current_focus or []),
+            explicit_keys=list(explicit_keys or []),
+            limit=self.MAX_ACTIVE,
+        )
         if beat_text:
-            for k in story.by_key:
-                if k.lower() in beat_text.lower():
-                    add(k)
+            for key in world.all_keys():
+                if key.lower() in beat_text.lower() and key not in active:
+                    active.append(key)
+                if len(active) >= self.MAX_ACTIVE:
+                    break
+        return set(active[: self.MAX_ACTIVE])
 
-        if len(active) > self.MAX_ACTIVE:
-            active = active[: self.MAX_ACTIVE]
-
-        return set(active)
-
-    def register_discovery(self, keys, discovered: Set[str], story):
+    def register_discovery(self, keys, discovered: Set[str], world: WorldModel):
         unlocked = []
         for k in keys:
-            if k not in discovered and k in story.by_key:
+            if k not in discovered and world.has_key(k):
                 discovered.add(k)
                 unlocked.append(k)
         return unlocked
@@ -143,16 +123,11 @@ class FocusManager:
         self,
         intent: Dict[str, Any],
         current_focus: List[str],
-        story,
+        world: WorldModel,
     ) -> List[str]:
 
         action = str(intent.get("action_category") or intent.get("action") or "").lower()
-        targets = [t for t in intent.get("targets", []) if t in story.by_key]
-        refusals = set(intent.get("refusals", []))
-
-        # Drop refused focus
-        if any(f in refusals for f in current_focus):
-            current_focus = []
+        targets = [t for t in intent.get("targets", []) if world.has_key(t)]
 
         if targets and action in {"move", "talk", "inspect", "other"}:
             return targets[:2]
@@ -162,7 +137,7 @@ class FocusManager:
 
         return current_focus
 
-    def resolve_from_text(self, text: str, story) -> Optional[str]:
+    def resolve_from_text(self, text: str, world: WorldModel) -> Optional[str]:
         lowered = text.lower()
 
         verb_patterns = [
@@ -180,7 +155,7 @@ class FocusManager:
             for match in re.finditer(pat, lowered):
                 candidates.append(match.group(1).strip())
 
-        for key in story.by_key:
+        for key in world.all_keys():
             if key.lower() in lowered:
                 candidates.append(key)
 
@@ -189,7 +164,7 @@ class FocusManager:
 
         cand = candidates[0].lower()
 
-        for key in story.by_key:
+        for key in world.all_keys():
             if key.lower() == cand or cand in key.lower():
                 return key
 
@@ -203,19 +178,21 @@ class FocusManager:
 class SnapshotBuilder:
 
     def build(self, orch):
-
+        world = orch.world
         nodes = []
-        for k, n in orch.story.by_key.items():
-            nodes.append({
-                "key": k,
-                "description": n.description,
-                "connections": list(n.connections),
-                "flags": {
-                    "active": k in orch.active_keys,
-                    "focus": k in orch.current_focus,
-                    "discovered": k in orch.discovered_keys,
-                },
-            })
+        for node in world.graph_nodes():
+            key = str(node.get("key") or "").strip()
+            if not key:
+                continue
+            payload = dict(node)
+            payload["flags"] = {
+                "active": key in orch.active_keys,
+                "focus": key in orch.current_focus,
+                "discovered": key in orch.discovered_keys or world.location_for_key(key) in orch.discovered_keys,
+            }
+            nodes.append(payload)
+
+        edges = world.graph_edges()
 
         history = [
             {"role": r, "content": c}
@@ -225,11 +202,19 @@ class SnapshotBuilder:
         return {
             "turn": orch.turn_index,
             "beat": orch.beats.current(),
+            "beat_state": {
+                "current_index": orch.beats.index,
+                "current": orch.beats.current(),
+                "next": orch.beats.next(),
+                "total": len(orch.beats.beats),
+            },
             "active_keys": sorted(orch.active_keys),
             "focus": orch.current_focus,
             "session_summary": orch.summary.text(),
             "story_status": orch.story_status,
             "history": history,
+            "nodes": nodes,
+            "edges": edges,
         }
 
 

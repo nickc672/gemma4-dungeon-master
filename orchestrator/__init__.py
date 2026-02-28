@@ -71,13 +71,12 @@ Classes:
     SnapshotBuilder
 
 
-WORLD_STATE/STORY.PY
-Purpose: Story graph and nodes.
+WORLD_STATE/WORLD_MODEL.PY
+Purpose: Authored world model and story state.
 
 Classes:
-    StoryGraph
-    StoryNode
-Story loading helpers
+    WorldModel
+JSON loading helpers
 
 
 CLI.PY

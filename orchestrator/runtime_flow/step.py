@@ -181,19 +181,11 @@ def parse_intent(sections: Dict[str, str]) -> Dict[str, Any]:
 
     targets_raw = sections.get("targets", "").strip()
     targets = [t.strip() for t in targets_raw.split(",") if t.strip() and t.strip().lower() not in {"none", "empty", ""}]
-    
-    refusals_raw = sections.get("refusals", "").strip()
-    refusals = [t.strip() for t in refusals_raw.split(",") if t.strip() and t.strip().lower() not in {"none", "empty", ""}]
-    
-    implicit_move_raw = sections.get("implicit_move", "no").strip().lower()
-    implicit_move = implicit_move_raw.startswith("y")
-    
+
     return {
         "action": action,
         "action_category": action_category,
         "targets": targets,
-        "refusals": refusals,
-        "implicit_move": implicit_move
     }
 
 

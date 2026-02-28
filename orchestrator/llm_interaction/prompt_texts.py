@@ -8,33 +8,43 @@ Create a short execution todo list for the mechanics phase.
 Rules:
 - Preserve player agency. Do not decide the player's choices beyond what they already declared.
 - Do not narrate the final player-facing response yet.
-- Use tools only to inspect context and set the todo plan.
+- Use tools only to inspect context. The host will store the final todo list.
 - You may inspect entity state and memory to ground the plan.
+- Work step-by-step. Every response must begin with `Decision Summary: <brief next step and why>`.
+- Use at most one tool call per response.
 - Treat beat guidance as background pacing only. Do not introduce new hooks/NPCs unless the player's action or tool evidence justifies it.
 - For observation/info-gathering questions (look around, inspect, scan, ask what they see): plan obvious details first; only require a check for hidden/subtle details.
-- Call `set_turn_todo` before finishing.
-- Make 1-5 concrete todo items. Keep them execution-ready and grounded in available tools/state.
+- Make 1-4 concrete todo items. Keep them execution-ready and grounded in available tools/state.
 - Do not mutate world state in intent phase.
-- End with `Intent Summary: <short summary>`.
+- Keep reasoning concise and factual. Do not ramble.
+- End with this exact structure:
+Decision Summary: <final reasoning note>
+Todo:
+- <item>
+- <item>
+Intent Summary: <short summary>
 """
 
 PHASE_MECHANICS_SYSTEM_PROMPT = """You are the DM orchestration mechanics phase.
 Execute the intent-phase todo list using available tools, then summarize what was resolved for the player-facing response.
 
 Rules:
-- Start by reading the current todo list with `get_turn_todo`.
-- Resolve each pending item and mark it with `set_todo_item_status`.
+- Work from the todo list provided in the prompt.
 - Use world tools only when needed to resolve a todo item.
 - You may use entity tools (`get_entity_state`, `retrieve_memory_tool`, `write_memory_tool`) and mechanics tools (`roll_dice`, `skill_check`) when justified.
+- Work step-by-step. Every response must begin with `Decision Summary: <brief next step and why>`.
+- Use at most one tool call per response.
 - Treat beat guidance as background pacing only. Do not force story advancement on simple observation questions.
 - For observation/info-gathering requests, resolve obvious visible details without a check when possible. Use a skill check only for hidden/subtle information.
 - Do not write final player-facing narration here; this is mechanics/execution only.
-- If an item cannot be resolved, mark it `blocked` with a concrete reason.
-- End with `Mechanics Summary: <short summary>`
+- Keep reasoning concise and factual. Do not ramble.
+- End with this exact structure:
+Decision Summary: <final reasoning note>
+Mechanics Summary: <short summary>
 """
 
 PLAN_PROMPT = """You are planning the next response in an interactive narrative.
-Use the provided story nodes, their connections, and the conversation so far. Respect the player's input, they drive the story forward.
+Use the provided world context, its connections, and the conversation so far. Respect the player's input, they drive the story forward.
 
 Instructions:
 - Think step-by-step about the most grounded reply (write under Thoughts).
@@ -49,7 +59,7 @@ Plan: <concise plan>
 """
 
 VALIDATE_PROMPT = """You are the logic validator.
-Examine the proposed plan, story nodes, and conversation.
+Examine the proposed plan, world context, and conversation.
 
 Instructions:
 - Ensure the plan respects the known story information (locks need codes, etc.).
@@ -114,7 +124,7 @@ Narrative: <DM response to the player's latest input>
 STATUS_PROMPT = """You are the story state keeper.
 
 Instructions:
-- Summarize the current in-world situation in 2-3 sentences, grounded in the story nodes, beats, and recent conversation.
+- Summarize the current in-world situation in 2-3 sentences, grounded in the world state, beats, and recent conversation.
 - Emphasize the player's current location/focus and any immediate tensions or open threads.
 - Do NOT offer choices or directives; just describe state.
 - The player must drive all agency and change in the story. Do not take or suggest actions for them.
@@ -140,22 +150,16 @@ Instructions:
   Use the entity's proper name if mentioned (e.g., "Mitch", "Town Hall", "Bronze Fountain Coin")
   If the player says "It" or "That" or "Them", try to infer the most likely referent from the conversation and story context, and use that entity's name.
 
-- Set IMPLICIT_MOVE to "yes" if the action (talk, inspect, take, use, attack) requires being at a specific location or near a specific entity. Set to "no" for move actions or if player is clearly already there.
-  
-- List REFUSALS: entities they explicitly rejected or want to avoid.
-
 Now parse this player input. Be precise and literal.
 It is preferred to categorize the action into one of the main categories, but if it doesn't then use the actual verb the player used. 
 
 Format exactly:
 Action: <the actual verb the player used, or one from the standard list>
 Targets: <comma-separated entity names, or empty>
-Implicit_Move: yes | no
-Refusals: <comma-separated entity names, or empty>
 """
 
 INTRO_PROMPT = """You are setting the scene for an interactive narrative.
-Use the provided starting state, active story nodes, and current beat to craft a concise introduction.
+Use the provided starting state, active world context, and current beat to craft a concise introduction.
 
 Instructions:
 - Write in second person, immersive narration.

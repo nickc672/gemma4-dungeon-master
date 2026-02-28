@@ -8,11 +8,26 @@ from typing import Any, Dict
 
 from .app_config import get_ollama_default_model, get_roll_mode
 from .runtime_flow.pipeline import StoryEngine
-from .world_state.story import STARTING_STATE
+from .world_state.tool_runtime import save_runtime_world_checkpoint, set_world_checkpoint_root
+from .world_state.world_model import build_world_model
 
 DEFAULT_MODEL = get_ollama_default_model()
 DEFAULT_TRUNCATE_LIMIT = 200
 TRACE_SKIP_KEYS = {"TOOL_CALLS", "ACTION_TOOLS", "MOVEMENT_BLOCKED", "TURN_TODO", "MECHANICS_WORLD_TOOLS"}
+
+
+def _default_world_model():
+    return build_world_model()
+
+
+def _write_session_checkpoint(session_dir: Path, engine: StoryEngine, turn_number: int) -> None:
+    label = f"turn_{int(turn_number):03d}"
+    snapshot = engine.snapshot()
+    (session_dir / f"{label}.json").write_text(
+        json.dumps(snapshot, indent=2),
+        encoding="utf-8",
+    )
+    save_runtime_world_checkpoint(engine.game_state, label)
 
 
 def _prompt_manual_d20_roll(request: Dict[str, Any]) -> int:
@@ -68,7 +83,7 @@ def print_llm_verbose(turn_number: int, trace: Dict[str, Any]) -> None:
         scene = state_before.get("scene", {})
         print("\nScene:")
         print(f"Location/Focus: {scene.get('location_focus')}")
-        print(f"Active Nodes: {scene.get('active_nodes')}")
+        print(f"Active Context Keys: {scene.get('active_nodes')}")
         print(f"Status: {scene.get('status')}")
         print(
             f"Session Summary: "
@@ -87,7 +102,7 @@ def print_llm_verbose(turn_number: int, trace: Dict[str, Any]) -> None:
         scene = state_after_action.get("scene", {})
         print("\nScene:")
         print(f"Location/Focus: {scene.get('location_focus')}")
-        print(f"Active Nodes: {scene.get('active_nodes')}")
+        print(f"Active Context Keys: {scene.get('active_nodes')}")
         print("-" * 60)
 
     # -------------------------
@@ -102,7 +117,8 @@ def print_llm_verbose(turn_number: int, trace: Dict[str, Any]) -> None:
 
         # Handle different data structures
         if not isinstance(data, dict):
-            print(f"Unexpected data type: {type(data)}")
+            print("NOTE:")
+            print(str(data).strip() or "<empty>")
             print("-" * 60)
             continue
 
@@ -151,6 +167,10 @@ def print_llm_verbose(turn_number: int, trace: Dict[str, Any]) -> None:
                     print("HOOK NOTES:")
                     for note in hook_notes:
                         print(f"  - {note}")
+
+                if rnd.get("response_block_reason"):
+                    print("RESPONSE BLOCK:")
+                    print(str(rnd.get("response_block_reason")).strip())
 
                 if rnd.get("stop_block_reason"):
                     print("STOP BLOCK:")
@@ -285,7 +305,7 @@ def print_llm_verbose(turn_number: int, trace: Dict[str, Any]) -> None:
         scene = state_after.get("scene", {})
         print("\nScene:")
         print(f"Location/Focus: {scene.get('location_focus')}")
-        print(f"Active Nodes: {scene.get('active_nodes')}")
+        print(f"Active Context Keys: {scene.get('active_nodes')}")
         print(f"Status: {scene.get('status')}")
         print(
             f"Session Summary: "
@@ -302,14 +322,14 @@ def print_llm_verbose(turn_number: int, trace: Dict[str, Any]) -> None:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Story exploration demo.")
+    defaults = _default_world_model()
 
     parser.add_argument("--model", default=DEFAULT_MODEL, help="Ollama model id")
 
     parser.add_argument(
-        "--start-key",
-        dest="start_keys",
-        action="append",
-        help="Story node key to activate initially (repeatable)",
+        "--starting-location",
+        default=defaults.starting_location,
+        help="Override the authored world-model starting location",
     )
 
     parser.add_argument(
@@ -344,6 +364,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_arg_parser().parse_args()
+    world_defaults = _default_world_model()
 
     # Keep logging quiet; verbose output is handled manually
     logging.basicConfig(level=logging.WARNING)
@@ -356,8 +377,8 @@ def main() -> None:
     engine = StoryEngine(
         model=args.model,
         verbose=args.verbose,
-        initial_keys=args.start_keys,
-        starting_state=args.starting_state or STARTING_STATE,
+        starting_location=args.starting_location,
+        starting_state=args.starting_state or world_defaults.starting_state,
         roll_mode=configured_roll_mode,
         manual_roll_provider=_prompt_manual_d20_roll if configured_roll_mode == "manual" else None,
     )
@@ -370,6 +391,7 @@ def main() -> None:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         session_dir = Path(args.state_root) / f"{stamp}_{args.session_name}"
         session_dir.mkdir(parents=True, exist_ok=True)
+        set_world_checkpoint_root(engine.game_state, session_dir / "checkpoints")
         print(f"Session snapshots will be written to: {session_dir}")
 
     # ----- Intro -----
@@ -385,11 +407,7 @@ def main() -> None:
     # Save initial snapshot
     if session_dir:
         try:
-            snapshot = engine.snapshot()
-            (session_dir / "turn_000.json").write_text(
-                json.dumps(snapshot, indent=2),
-                encoding="utf-8",
-            )
+            _write_session_checkpoint(session_dir, engine, 0)
         except Exception as exc:
             logging.warning("Failed to write initial state snapshot: %s", exc)
 
@@ -421,12 +439,7 @@ def main() -> None:
         # Save snapshot
         if session_dir:
             try:
-                snapshot = engine.snapshot()
-                filename = f"turn_{turn.get('turn', engine.turn_index):03d}.json"
-                (session_dir / filename).write_text(
-                    json.dumps(snapshot, indent=2),
-                    encoding="utf-8",
-                )
+                _write_session_checkpoint(session_dir, engine, int(turn.get("turn", engine.turn_index)))
             except Exception as exc:
                 logging.warning("Failed to write state snapshot: %s", exc)
 

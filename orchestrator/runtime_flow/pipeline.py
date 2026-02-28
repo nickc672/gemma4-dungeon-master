@@ -1,6 +1,5 @@
 from typing import Any, Dict, Sequence, Optional, List, Callable
 from .conversation_log import History
-from ..world_state.story import StoryGraph, BEAT_LIST, STARTING_STATE
 from ..llm_interaction.adapter import LLMAdapter
 from ..app_config import (
     get_ollama_default_model,
@@ -8,25 +7,27 @@ from ..app_config import (
     get_ollama_stage_options,
     get_roll_mode,
 )
-from .session_state import BeatTracker, SessionSummary, ActiveKeyManager, FocusManager, SnapshotBuilder
+from .session_state import BeatTracker, SessionSummary, ActiveKeyManager, SnapshotBuilder
 from .step_registry import build_steps
 from ..llm_interaction.prompt_builders import (
     PromptState,
     build_intro_prompt,
     build_intent_prompt,
-    build_plan_prompt,
+    build_intent_phase_prompt,
+    build_mechanics_phase_prompt,
     build_narrate_prompt,
 )
 from ..llm_interaction.prompt_texts import (
     PHASE_INTENT_SYSTEM_PROMPT,
     PHASE_MECHANICS_SYSTEM_PROMPT,
 )
-from ..world_state.story import create_initial_game_state, NodeType
+from ..world_state.story import create_initial_game_state
+from ..world_state.tool_runtime import get_runtime_world_model
+from ..world_state.world_model import WorldModel, build_world_model, resolve_world_model_data_dir
 import json
 import re
 from ..world_state.tools import (
     TOOL_DEFINITIONS,
-    TURN_TODO_TOOL_DEFINITIONS,
     TODO_ACTIVE_STATUSES,
     bind_turn_orchestration_ctx,
     clear_turn_orchestration_ctx,
@@ -38,6 +39,34 @@ def _extract_labeled_line(text: str, label: str) -> str:
     pattern = re.compile(rf"(?im)^\s*{re.escape(label)}\s*:\s*(.+?)\s*$")
     match = pattern.search(text or "")
     return match.group(1).strip() if match else ""
+
+
+def _extract_labeled_block(text: str, label: str) -> str:
+    pattern = re.compile(
+        rf"(?ims)^\s*{re.escape(label)}\s*:\s*(.*?)(?=^\s*[A-Za-z][A-Za-z _-]*\s*:|\Z)"
+    )
+    match = pattern.search(text or "")
+    return match.group(1).strip() if match else ""
+
+
+def _extract_bullet_items(text: str, label: str) -> list[str]:
+    block = _extract_labeled_block(text, label)
+    items: list[str] = []
+    for line in block.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(("- ", "* ")):
+            items.append(stripped[2:].strip())
+            continue
+        numbered = re.match(r"^\d+\.\s+(.*)$", stripped)
+        if numbered:
+            items.append(numbered.group(1).strip())
+    return [item for item in items if item]
+
+
+def _todo_specs_from_lines(lines: list[str]) -> list[dict[str, Any]]:
+    return [{"task": line, "requires_tool": False} for line in lines if str(line).strip()]
 
 
 def _summary_snippet(text: str, limit: int = 220) -> str:
@@ -58,29 +87,49 @@ class StoryEngine:
         self,
         *,
         model: Optional[str] = None,
-        story_graph: Optional[StoryGraph] = None,
-        initial_keys: Optional[Sequence[str]] = None,
+        world_model: Optional[WorldModel] = None,
+        world_model_data_dir: Optional[str] = None,
+        starting_location: Optional[str] = None,
         beats: Optional[Sequence[str]] = None,
-        starting_state: str = STARTING_STATE,
+        starting_state: Optional[str] = None,
         verbose: bool = False,
         roll_mode: Optional[str] = None,
         manual_roll_provider: Optional[Callable[[Dict[str, Any]], int]] = None,
     ) -> None:
-
         self.history = History()
         self.summary = SessionSummary(max_chars=1200)
         self.turn_index = 0
         self.story_status = ""
 
-        self.beats = BeatTracker(list(beats or BEAT_LIST))
+        self.world = world_model or build_world_model(data_dir=world_model_data_dir)
+        source_data_dir = resolve_world_model_data_dir(world_model_data_dir)
+        resolved_starting_location = (
+            str(starting_location or "").strip()
+            or self.world.starting_location
+            or "Town Square"
+        )
+        self.starting_state = str(starting_state or self.world.starting_state or "").strip()
+        self.story_status = self.starting_state
+        self.beats = BeatTracker(list(beats or self.world.beat_list))
+        self.beat_list = list(self.beats.beats)
 
-        self.story = story_graph or StoryGraph(initial_keys=initial_keys)
-        self.starting_state = starting_state
-        self.current_focus = list(self.story.initial_keys[:1])
-        self.discovered_keys = set(self.story.initial_keys)
+        self.game_state = create_initial_game_state(
+            starting_location=resolved_starting_location,
+            world_model=self.world,
+            world_model_data_dir=world_model_data_dir,
+        )
+        setattr(self.game_state, "_world_model_data_dir", str(source_data_dir))
+        setattr(self.game_state, "_runtime_world_model", self.world)
+        self.world.starting_location = resolved_starting_location
+        player_entity = self.world.get_entity("Player")
+        if player_entity is not None:
+            player_entity.set_location(resolved_starting_location)
+        self.game_state.player_location = resolved_starting_location
+        self.game_state.discovered_keys = {resolved_starting_location}
+        self.current_focus = [resolved_starting_location]
+        self.discovered_keys = self.game_state.discovered_keys
         self.active_keys = set()
-
-        self.game_state = create_initial_game_state(self.story)
+        get_runtime_world_model(self.game_state)
         self.roll_mode = (roll_mode or get_roll_mode()).strip().lower()
         if self.roll_mode not in {"auto", "manual"}:
             self.roll_mode = "auto"
@@ -99,12 +148,11 @@ class StoryEngine:
         )
 
         self.steps = build_steps()
-        self.focus_manager = FocusManager()
         self.active_manager = ActiveKeyManager()
         self.snapshot_builder = SnapshotBuilder()
 
         self.active_keys = self.active_manager.refresh(
-            self.story,
+            self.world,
             self.current_focus,
             beat_text=self.beats.current(),
         )
@@ -114,29 +162,35 @@ class StoryEngine:
     def _make_state(self, player_input, intent):
         entity_info = {}
         for key in self.active_keys:
-            node = self.story.get_node(key)
-            if node is None:
-                continue
-
-            info = {
-                "node_type": node.node_type.value,
-                "connections": ", ".join(node.connections) if node.connections else "none",
-            }
-
-            if node.node_type == NodeType.LOCATION:
-                info["location"] = key
-                info["discovered"] = key in self.game_state.discovered_keys
-
-            elif node.node_type == NodeType.NPC:
-                #npc_locations first, then fall back to home connection
-                info["location"] = (
-                    self.game_state.npc_locations.get(key)
-                    or (node.connections[0] if node.connections else "unknown")
-                )
-
-            elif node.node_type in (NodeType.ITEM, NodeType.CLUE):
-                #so the ittems are static and their location is always connections[0]
-                info["location"] = node.connections[0] if node.connections else "unknown"
+            location = self.world.get_location(key)
+            if location is not None:
+                info = {
+                    "node_type": "location",
+                    "connections": ", ".join(location.connections) if location.connections else "none",
+                    "location": location.key,
+                    "discovered": location.key in self.game_state.discovered_keys,
+                }
+            else:
+                entity = self.world.get_entity(key)
+                if entity is not None:
+                    info = {
+                        "node_type": entity.entity_type,
+                        "connections": "none",
+                        "location": entity.location,
+                    }
+                    if entity.inventory:
+                        info["inventory"] = ", ".join(entity.inventory)
+                else:
+                    item = self.world.get_item(key)
+                    if item is None:
+                        continue
+                    info = {
+                        "node_type": "item",
+                        "connections": "none",
+                        "location": self.world.location_for_key(item.key) or item.holder_key,
+                    }
+                    if item.holder_kind == "entity":
+                        info["holder"] = item.holder_key
 
             #any relevant quest flags for this entity
             relevant_flags = {
@@ -152,7 +206,7 @@ class StoryEngine:
             entity_info[key] = info
 
         return PromptState(
-            history_text=self.history.as_text(limit=8),
+            history_text=self.history.as_text(limit=4),
             active_keys=sorted(self.active_keys),
             focus=self.current_focus,
             beat_current=self.beats.progress_text(),
@@ -186,7 +240,6 @@ class StoryEngine:
         )
 
         if trace is not None:
-            trace["INTENT"] = intent_debug
             trace["INTENT_PARSE"] = intent_debug
 
         # -----------------------
@@ -194,7 +247,7 @@ class StoryEngine:
         # -----------------------
 
         self.active_keys = self.active_manager.refresh(
-            self.story,
+            self.world,
             self.current_focus,
             beat_text=self.beats.current(),
         )
@@ -242,19 +295,9 @@ class StoryEngine:
             for tool in TOOL_DEFINITIONS
             if isinstance(tool, dict) and isinstance(tool.get("function"), dict)
         }
-        todo_tools_by_name = {
-            tool["function"]["name"]: tool
-            for tool in TURN_TODO_TOOL_DEFINITIONS
-            if isinstance(tool, dict) and isinstance(tool.get("function"), dict)
-        }
-        all_tool_defs_by_name = {**world_tools_by_name, **todo_tools_by_name}
 
         phase_tool_names = {
             "intent": [
-                "set_turn_todo",
-                "get_turn_todo",
-                "get_turn_progress",
-                "add_turn_note",
                 "check_can_interact",
                 "get_current_context",
                 "list_scene_entities",
@@ -262,10 +305,6 @@ class StoryEngine:
                 "retrieve_memory_tool",
             ],
             "mechanics": [
-                "get_turn_todo",
-                "set_todo_item_status",
-                "get_turn_progress",
-                "add_turn_note",
                 "check_can_interact",
                 "get_current_context",
                 "list_scene_entities",
@@ -281,9 +320,9 @@ class StoryEngine:
 
         def phase_tools(phase_name: str) -> list[dict[str, Any]]:
             return [
-                all_tool_defs_by_name[name]
+                world_tools_by_name[name]
                 for name in phase_tool_names.get(phase_name, [])
-                if name in all_tool_defs_by_name
+                if name in world_tools_by_name
             ]
 
         def compute_todo_counts() -> Dict[str, int]:
@@ -323,7 +362,7 @@ class StoryEngine:
                 }
                 args["_manual_roll"] = int(self.manual_roll_provider(roll_request))
 
-            result = execute_world_tool(tool_name, args, self.game_state, self.story)
+            result = execute_world_tool(tool_name, args, self.game_state)
             if tool_name in world_tools_by_name:
                 world_call_entry = {
                     "phase": turn_ctx.get("phase", ""),
@@ -346,17 +385,17 @@ class StoryEngine:
                     "result": result,
                 })
 
-            if tool_name == "move_to_location" and result.get("success"):
-                new_location = result.get("new_location")
+            if tool_name in {"move_to_location", "move_npc"} and result.get("success"):
+                new_location = self.game_state.player_location
                 if isinstance(new_location, str) and new_location:
                     self.current_focus = [new_location]
-                    self.active_keys = self.active_manager.refresh(
-                        self.story,
-                        self.current_focus,
-                        beat_text=self.beats.current(),
-                    )
-                    turn_ctx["current_focus"] = list(self.current_focus)
-                    turn_ctx["active_keys"] = sorted(self.active_keys)
+                self.active_keys = self.active_manager.refresh(
+                    self.world,
+                    self.current_focus,
+                    beat_text=self.beats.current(),
+                )
+                turn_ctx["current_focus"] = list(self.current_focus)
+                turn_ctx["active_keys"] = sorted(self.active_keys)
 
             return result
 
@@ -379,38 +418,33 @@ class StoryEngine:
                 success = payload.get("success", True)
             if success:
                 return None
-            if tool_name in world_tools_by_name:
-                return "Tool call failed. Mark the todo item blocked or continue with a different tool."
-            return "Tool call failed. Correct arguments and continue."
+            return "Tool call failed. Re-evaluate the step, then either try a different grounded tool call or finish with what is known."
+
+        def phase_response_hook(assistant_text: str, tool_calls: Sequence[Dict[str, Any]], _iteration: int) -> Optional[str]:
+            if not str(assistant_text or "").strip():
+                return "Every response must include a short `Decision Summary:` line."
+            if not _extract_labeled_line(assistant_text, "Decision Summary"):
+                return "Every response must begin with `Decision Summary: ...`."
+            if len(tool_calls) > 1:
+                return "Use at most one tool call per response."
+            return None
 
         def intent_stop_hook(assistant_text: str, _stop_hook_active: bool) -> Optional[str]:
-            if not str(assistant_text or "").strip():
-                return "Intent phase must provide text plus a todo plan."
             if not _extract_labeled_line(assistant_text, "Intent Summary"):
                 return "Intent phase must end with `Intent Summary: ...`."
-            if int(turn_ctx.get("todo_revision", 0)) <= 0:
-                return "Intent phase must call `set_turn_todo` before completion."
-            if not turn_ctx.get("todo"):
-                return "Intent phase created an empty todo list."
+            todo_lines = _extract_bullet_items(assistant_text, "Todo")
+            if not todo_lines:
+                return "Intent phase must include a `Todo:` block with 1-4 bullet items."
+            if len(todo_lines) > 4:
+                return "Intent phase todo list must contain at most 4 bullet items."
             return None
 
         def mechanics_stop_hook(assistant_text: str, _stop_hook_active: bool) -> Optional[str]:
-            counts = compute_todo_counts()
-            pending = counts.get("pending", 0) + counts.get("in_progress", 0)
-            if pending > 0:
-                return f"Mechanics phase cannot finish with pending todo items ({pending} remaining)."
             if not _extract_labeled_line(assistant_text, "Mechanics Summary"):
                 return "Mechanics phase must end with `Mechanics Summary: ...`."
             return None
 
-        intent_phase_prompt = (
-            build_plan_prompt(state)
-            + "\n\n# Parsed Intent (structured parser output)\n"
-            + json.dumps(intent, indent=2)
-            + "\n\n# Phase Task\n"
-            + "Use tools to inspect context if needed, then create a turn todo list for mechanics execution. "
-            + "Do not mutate world state in this phase."
-        )
+        intent_phase_prompt = build_intent_phase_prompt(state)
 
         turn_ctx["phase"] = "intent"
         intent_loop = self.adapter.run_tool_loop(
@@ -422,38 +456,36 @@ class StoryEngine:
             max_iterations=8,
             pre_tool_use=pre_tool_use,
             post_tool_use=post_tool_use,
+            assistant_response_hook=phase_response_hook,
             stop_hook=intent_stop_hook,
         )
 
         intent_phase_text = str(intent_loop.get("final_answer", "") or "").strip()
         turn_ctx["intent_summary"] = _extract_labeled_line(intent_phase_text, "Intent Summary")
+        planned_items = _extract_bullet_items(intent_phase_text, "Todo")
+
+        if planned_items:
+            plan_summary = turn_ctx["intent_summary"] or f"Resolve player action '{player_input}' with grounded mechanics/state checks."
+            execute_world_tool(
+                "set_turn_todo",
+                {"items": _todo_specs_from_lines(planned_items), "plan_summary": plan_summary},
+                self.game_state,
+            )
+            turn_ctx["intent_summary"] = plan_summary
 
         if not turn_ctx["todo"]:
-            fallback_items: list[dict[str, Any]] = []
+            fallback_lines: list[str] = []
             action = str(intent.get("action_category") or intent.get("action") or "other").lower()
             targets = list(intent.get("targets") or [])
             if action == "move" and targets:
-                fallback_items.append(
-                    {
-                        "task": f"Attempt movement to {targets[0]} if connected.",
-                        "requires_tool": True,
-                        "tool_name": "move_to_location",
-                        "arguments_hint": {"location_key": targets[0]},
-                    }
-                )
+                fallback_lines.append(f"Attempt movement to {targets[0]} if it is reachable from the current location.")
             else:
-                fallback_items.append(
-                    {
-                        "task": f"Resolve the player's declared action in context: {player_input}",
-                        "requires_tool": False,
-                    }
-                )
+                fallback_lines.append(f"Resolve the player's declared action in context: {player_input}")
             fallback_summary = turn_ctx["intent_summary"] or f"Resolve player action '{player_input}' with grounded mechanics/state checks."
             execute_world_tool(
                 "set_turn_todo",
-                {"items": fallback_items, "plan_summary": fallback_summary},
+                {"items": _todo_specs_from_lines(fallback_lines), "plan_summary": fallback_summary},
                 self.game_state,
-                self.story,
             )
             turn_ctx["intent_summary"] = fallback_summary
             if trace is not None:
@@ -464,26 +496,23 @@ class StoryEngine:
 
         intent_todo_snapshot = json.loads(json.dumps(turn_ctx["todo"]))
 
-        mechanics_handoff = (
-            "Phase handoff: intent -> mechanics\n"
-            f"Player input: {player_input}\n"
-            f"Parsed intent: {json.dumps(intent, ensure_ascii=True)}\n"
-            f"Intent summary: {turn_ctx['intent_summary']}\n"
-            f"Turn todo revision: {turn_ctx['todo_revision']}\n"
-            f"Turn todo items JSON: {json.dumps(turn_ctx['todo'], ensure_ascii=True)}\n"
-            "Execute the todo list and mark every item with set_todo_item_status before finishing."
+        mechanics_handoff = build_mechanics_phase_prompt(
+            state,
+            turn_ctx["intent_summary"],
+            turn_ctx["todo"],
         )
 
         turn_ctx["phase"] = "mechanics"
         mechanics_loop = self.adapter.run_tool_loop(
             stage="phase_mechanics",
             system_prompt=PHASE_MECHANICS_SYSTEM_PROMPT,
-            messages=[*intent_loop.get("messages", []), {"role": "user", "content": mechanics_handoff}],
+            messages=[{"role": "user", "content": mechanics_handoff}],
             tools=phase_tools("mechanics"),
             tool_executor=phase_tool_executor,
             max_iterations=12,
             pre_tool_use=pre_tool_use,
             post_tool_use=post_tool_use,
+            assistant_response_hook=phase_response_hook,
             stop_hook=mechanics_stop_hook,
         )
 
@@ -505,6 +534,12 @@ class StoryEngine:
                 "Mechanics phase completed with todo counts "
                 + json.dumps(counts, ensure_ascii=True)
             )
+        if mechanics_loop.get("status") == "completed":
+            for item in turn_ctx["todo"]:
+                if str(item.get("status", "pending")) in TODO_ACTIVE_STATUSES:
+                    item["status"] = "done"
+                    item["resolution"] = turn_ctx["mechanics_summary"]
+                    item["used_tool"] = bool(item.get("used_tool", False))
 
         counts = compute_todo_counts()
         blocked_count = counts.get("blocked", 0)

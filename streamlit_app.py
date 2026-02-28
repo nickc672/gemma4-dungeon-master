@@ -8,25 +8,25 @@ import streamlit as st
 
 from orchestrator.app_config import get_ollama_default_model
 from orchestrator.runtime_flow.pipeline import StoryEngine
-from orchestrator.world_state.story import STARTING_STATE
+from orchestrator.world_state.world_model import build_world_model
 
 ###
 PLAYER_BG_PATH = Path("UI-Assets/town-square.jpg")
 APP_BG_PATH = Path("UI-Assets/FantasyPort.jpg")
 
 
-def _parse_keys(raw: str) -> List[str]:
-    return [key.strip() for key in raw.split(",") if key.strip()]
+def _default_world_model():
+    return build_world_model()
 
 
-def _config_signature(model: str, keys: List[str], starting_state: str) -> str:
-    return f"{model}|{','.join(keys)}|{starting_state}"
+def _config_signature(model: str, starting_location: str, starting_state: str) -> str:
+    return f"{model}|{starting_location}|{starting_state}"
 
 
-def _initialize_session(model: str, keys: List[str], starting_state: str) -> None:
+def _initialize_session(model: str, starting_location: str, starting_state: str) -> None:
     engine = StoryEngine(
         model=model,
-        initial_keys=keys or None,
+        starting_location=starting_location,
         starting_state=starting_state,
     )
     messages: List[Dict[str, str]] = []
@@ -42,7 +42,7 @@ def _initialize_session(model: str, keys: List[str], starting_state: str) -> Non
     st.session_state.orchestrator = engine
     st.session_state.messages = messages
     st.session_state.last_turn = {}
-    st.session_state.config_sig = _config_signature(model, keys, starting_state)
+    st.session_state.config_sig = _config_signature(model, starting_location, starting_state)
 
 
 def _get_story_engine() -> StoryEngine:
@@ -201,14 +201,14 @@ def _dot_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def _build_story_graph_dot(snapshot: Dict[str, Any]) -> str:
+def _build_world_state_dot(snapshot: Dict[str, Any]) -> str:
     nodes = snapshot.get("nodes") or []
     edges = snapshot.get("edges") or []
     active = set(snapshot.get("active_keys") or [])
     focus = set(snapshot.get("focus") or [])
 
     lines = [
-        "graph Story {",
+        "graph WorldState {",
         '  graph [bgcolor="transparent", splines=true, overlap=false];',
         '  node [shape=ellipse, style=filled, fontname="Helvetica", fontsize=11, color="#2f3a45"];',
         '  edge [color="#98a1ab", penwidth=1.2];',
@@ -251,6 +251,7 @@ def _build_story_graph_dot(snapshot: Dict[str, Any]) -> str:
 
 def main() -> None:
     st.set_page_config(page_title="The Dungeon Master's Companion", layout="wide")
+    world_defaults = _default_world_model()
     st.markdown(
         '<h1 class="tangerine-bold" '
         'style="font-size:70px; text-align:center; margin-bottom:0.25rem; font-family:\'Tangerine\', cursive;">'
@@ -270,15 +271,15 @@ def main() -> None:
             key="model_input",
         ) or ""
 
-        keys_raw = st.text_input(
-            "Starting keys (comma-separated)",
-            value=st.session_state.get("keys_input", ""),
-            key="keys_input",
+        starting_location = st.text_input(
+            "Starting location",
+            value=st.session_state.get("starting_location_input", world_defaults.starting_location),
+            key="starting_location_input",
         ) or ""
 
         starting_state = st.text_area(
             "Starting state",
-            value=st.session_state.get("starting_state_input", STARTING_STATE),
+            value=st.session_state.get("starting_state_input", world_defaults.starting_state),
             height=200,
             key="starting_state_input",
         ) or ""
@@ -287,13 +288,12 @@ def main() -> None:
         show_status = st.checkbox("Show story status", value=True)
         show_debug = st.checkbox("Show debug info", value=False)
 
-    keys = _parse_keys(keys_raw)
-    sig = _config_signature(model, keys, starting_state)
+    sig = _config_signature(model, starting_location, starting_state)
 
     if "orchestrator" not in st.session_state:
-        _initialize_session(model, keys, starting_state)
+        _initialize_session(model, starting_location, starting_state)
     elif start_new or st.session_state.get("config_sig") != sig:
-        _initialize_session(model, keys, starting_state)
+        _initialize_session(model, starting_location, starting_state)
 
     _inject_player_background(PLAYER_BG_PATH)
     _inject_app_background(APP_BG_PATH)
@@ -378,13 +378,13 @@ def main() -> None:
             )
 
     with dm_tab:
-        snapshot = orchestrator.snapshot()
+        snapshot = engine.snapshot()
         st.subheader("Campaign Status")
         if show_status:
             beat = snapshot.get("beat_state", {})
             st.markdown(
                 f"**Beat:** {beat.get('current_index', 0) + 1} "
-                f"of {len(orchestrator.beat_list)} - {beat.get('current', '')}"
+                f"of {beat.get('total', 0)} - {beat.get('current', '')}"
             )
             st.markdown(f"**Focus:** {', '.join(snapshot.get('focus') or []) or 'None'}")
             st.markdown(f"**Active keys:** {', '.join(snapshot.get('active_keys') or []) or 'None'}")
@@ -395,13 +395,13 @@ def main() -> None:
         else:
             st.markdown("Story status display is disabled in the sidebar.")
 
-        st.subheader("Story Graph")
+        st.subheader("World State")
         if snapshot.get("nodes"):
-            graph_dot = _build_story_graph_dot(snapshot)
+            graph_dot = _build_world_state_dot(snapshot)
             st.graphviz_chart(graph_dot, use_container_width=True)
             st.caption("Gold = focus. Teal = active. Gray = inactive.")
         else:
-            st.markdown("No story graph data yet.")
+            st.markdown("No world-state data yet.")
 
         if show_debug:
             debug_data = st.session_state.get("last_turn", {}).get("llm_debug")

@@ -34,16 +34,54 @@ def _format_intent(intent: Dict[str, Any]) -> str:
     action = intent.get("action") or ""
     action_category = intent.get("action_category") or ""
     targets = ", ".join(intent.get("targets") or [])
-    refusals = ", ".join(intent.get("refusals") or [])
     category_line = ""
     if action_category and action_category != action:
         category_line = f"\nAction_Category: {action_category}"
     return (
-        f"\nAction: {action}"
+        f"Action: {action}"
         f"{category_line}"
         f"\nTargets: {targets or 'None'}"
-        f"\nRefusals: {refusals or 'None'}"
     )
+
+
+def _current_location(state: PromptState) -> str:
+    return state.focus[0] if state.focus else "Unknown"
+
+
+def _recent_history(history_text: str, limit_lines: int = 4) -> str:
+    lines = [line.strip() for line in str(history_text or "").splitlines() if line.strip()]
+    if not lines:
+        return "None"
+    return "\n".join(lines[-limit_lines:])
+
+
+def _latest_recap(summary_text: str) -> str:
+    lines = [line.strip() for line in str(summary_text or "").splitlines() if line.strip()]
+    return lines[-1] if lines else "None"
+
+
+def _scene_context(state: PromptState) -> tuple[list[str], list[str]]:
+    current_location = _current_location(state)
+    immediate_lines: list[str] = []
+    nearby_locations: list[str] = []
+
+    for key in sorted(state.entity_info):
+        info = state.entity_info[key]
+        node_type = info.get("node_type", "unknown")
+        location = info.get("location", "unknown")
+        if key == current_location or location == current_location:
+            if key != current_location:
+                immediate_lines.append(f"- {key} ({node_type})")
+            continue
+        if node_type == "location":
+            nearby_locations.append(f"- {key}")
+
+    if not immediate_lines:
+        immediate_lines = ["- None noted"]
+    if not nearby_locations:
+        nearby_locations = ["- None"]
+
+    return immediate_lines, nearby_locations[:6]
 
 
 # -------------------------
@@ -93,7 +131,7 @@ def build_plan_prompt(state: PromptState) -> str:
 
         # Scene
         Location/Focus: {', '.join(state.focus) or 'None'}
-        Relevant Graph Nodes (not all are necessarily visible right now): {keys or 'None'}
+        Relevant World Context Keys (not all are necessarily visible right now): {keys or 'None'}
         Status: {state.story_status or 'Not set'}
         Session Summary: {state.session_summary}
 
@@ -104,6 +142,25 @@ def build_plan_prompt(state: PromptState) -> str:
         {state.player_input}
         """
     ).strip()
+
+
+def build_intent_phase_prompt(state: PromptState) -> str:
+    current_location = _current_location(state)
+    immediate_lines, nearby_locations = _scene_context(state)
+    return (
+        f"# Player Request\n"
+        f"{state.player_input}\n\n"
+        f"# Parsed Intent\n"
+        f"{_format_intent(state.intent)}\n\n"
+        f"# Scene Snapshot\n"
+        f"Current Location: {current_location}\n"
+        f"Immediate Context:\n{chr(10).join(immediate_lines)}\n"
+        f"Nearby Known Locations:\n{chr(10).join(nearby_locations)}\n\n"
+        f"# Session Recap\n"
+        f"{_latest_recap(state.session_summary)}\n\n"
+        f"# Recent Conversation\n"
+        f"{_recent_history(state.history_text)}"
+    )
 
 
 def build_validate_prompt(state: PromptState, plan: str) -> str:
@@ -138,7 +195,7 @@ def build_validate_prompt(state: PromptState, plan: str) -> str:
 
         # Scene
         Location/Focus: {', '.join(state.focus) or 'None'}
-        Active Nodes: {keys or 'None'}
+        Active Context Keys: {keys or 'None'}
         Status: {state.story_status or 'Not set'}
         Session Summary: {state.session_summary}
 
@@ -167,23 +224,8 @@ def build_narrate_prompt(
 ) -> str:
     """Build the narration prompt with action results."""
 
-    current_location = state.focus[0] if state.focus else "Unknown"
-    immediate_context_lines: list[str] = []
-    related_context_lines: list[str] = []
-    for key in sorted(state.entity_info):
-        info = state.entity_info[key]
-        node_type = info.get("node_type", "unknown")
-        location = info.get("location", "unknown")
-        line = f"- {key} ({node_type}, location={location})"
-        if location == current_location or key == current_location:
-            immediate_context_lines.append(line)
-        else:
-            related_context_lines.append(line)
-
-    if not immediate_context_lines:
-        immediate_context_lines = ["- None"]
-    if not related_context_lines:
-        related_context_lines = ["- None"]
+    current_location = _current_location(state)
+    immediate_context_lines, nearby_locations = _scene_context(state)
 
     action_summary = ""
     if action_results:
@@ -198,38 +240,57 @@ def build_narrate_prompt(
     return f"""# Player Request
 {state.player_input}
 
-# Story Context
-
+# Current Scene
 Player's Current Location: {current_location}
-
-Immediate Context Entities (grounding hints for the current location):
+Immediate Context:
 {chr(10).join(immediate_context_lines)}
+Nearby Known Locations:
+{chr(10).join(nearby_locations)}
 
-Related World Context (relevant graph/entity context; may include adjacent or non-visible items):
-{chr(10).join(related_context_lines)}
-
-Relevant Graph Nodes (not guaranteed visible):
-{chr(10).join(f"- {key}" for key in state.active_keys)}
-
-# Beat (background pacing only)
-Current: {state.beat_current}
-Next: {state.beat_next}
+# Session Recap
+{_latest_recap(state.session_summary)}
 
 # Recent Conversation
-{state.history_text}
+{_recent_history(state.history_text)}
 
-# Plan
-{plan}
-
-# Validation
-Verdict: {verdict}
-Notes: {notes}
+# Resolved Turn State
+Intent Summary: {plan}
+Resolution Status: {verdict}
+Mechanics Summary: {notes}
 {action_summary}
 
 ---
 
 Now generate a DM response to the player's latest input using the CURRENT story context above.
 """
+
+
+def build_mechanics_phase_prompt(
+    state: PromptState,
+    intent_summary: str,
+    todo_items: list[dict[str, Any]],
+) -> str:
+    current_location = _current_location(state)
+    immediate_lines, nearby_locations = _scene_context(state)
+    todo_lines = [f"- {str(item.get('task', '')).strip()}" for item in todo_items if str(item.get("task", "")).strip()]
+    if not todo_lines:
+        todo_lines = [f"- Resolve the player's declared action in context: {state.player_input}"]
+    return (
+        f"# Player Request\n"
+        f"{state.player_input}\n\n"
+        f"# Parsed Intent\n"
+        f"{_format_intent(state.intent)}\n\n"
+        f"# Scene Snapshot\n"
+        f"Current Location: {current_location}\n"
+        f"Immediate Context:\n{chr(10).join(immediate_lines)}\n"
+        f"Nearby Known Locations:\n{chr(10).join(nearby_locations)}\n\n"
+        f"# Intent Summary\n"
+        f"{intent_summary or 'Resolve the player request directly and only use tools if needed.'}\n\n"
+        f"# Turn Todo\n"
+        f"{chr(10).join(todo_lines)}\n\n"
+        f"# Session Recap\n"
+        f"{_latest_recap(state.session_summary)}"
+    )
 
 
 def build_status_prompt(state: PromptState) -> str:
@@ -240,7 +301,7 @@ def build_status_prompt(state: PromptState) -> str:
         Current Focus:
         {', '.join(state.focus) or 'None'}
 
-        Active Nodes:
+        Active Context Keys:
         {keys or 'None'}
 
         Beat:
@@ -275,7 +336,7 @@ def build_intro_prompt(state: PromptState) -> str:
         Focus:
         {', '.join(state.focus) or 'None'}
 
-        Active Nodes:
+        Active Context Keys:
         {keys or 'None'}
 
         Session Summary:
