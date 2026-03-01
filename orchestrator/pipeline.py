@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 from .adapter import LLMAdapter, LLMError
 from .history import History
+from .normalization.normalize_input import InputNormalizer
 from .story import BEAT_LIST, STARTING_STATE, StoryGraph
 
 
@@ -202,6 +203,7 @@ class Orchestrator:
         beats: Optional[Sequence[str]] = None,
         starting_state: str = STARTING_STATE,
         verbose: bool = False,
+        normalization_top_n: int = 400,
     ) -> None:
         self.history = History(max_turns=None)
         self.starting_state = starting_state
@@ -212,8 +214,10 @@ class Orchestrator:
         self.story_status: str = ""
         self.last_debug: Dict[str, Dict[str, str]] = {}
         self.last_intent: Dict[str, List[str] | str] = {"action": "", "targets": [], "refusals": []}
+        self.last_normalization: Dict[str, object] = {}
 
         self.story = story_graph or StoryGraph(initial_keys=initial_keys)
+        self.normalizer = InputNormalizer.for_story(self.story, synonym_top_n=normalization_top_n)
 
         self.discovered_keys: set[str] = set(self.story.initial_keys)
         self.current_focus: List[str] = list(self.story.initial_keys[:1])
@@ -277,9 +281,12 @@ class Orchestrator:
 
     def run_turn(self, player_input: str) -> Dict[str, object]:
         debug_data: Dict[str, Dict[str, str]] = {}
+        normalization = self.normalizer.normalize(player_input, context=self._normalization_context())
+        self.last_normalization = normalization
+        debug_data["normalization"] = {"prompt": player_input, "raw": str(normalization)}
 
         # Intent step
-        intent_payload = self._build_intent_prompt(player_input)
+        intent_payload = self._build_intent_prompt(player_input, normalization)
         intent, intent_raw = self.step_intent.run(self.adapter, intent_payload)
         debug_data["intent"] = {"prompt": intent_payload, "raw": intent_raw}
         self.last_intent = intent
@@ -289,7 +296,7 @@ class Orchestrator:
         self._refresh_active_keys()
 
         # Focus refinement (optional)
-        focus_payload = self._build_focus_prompt(player_input, intent)
+        focus_payload = self._build_focus_prompt(player_input, intent, normalization)
         try:
             focus_keys, focus_raw = self.step_focus.run(self.adapter, focus_payload)
             debug_data["focus"] = {"prompt": focus_payload, "raw": focus_raw}
@@ -313,21 +320,21 @@ class Orchestrator:
             self.story_status = self._summary_text()
 
         # Planning
-        plan_prompt = self._build_plan_prompt(player_input, intent)
+        plan_prompt = self._build_plan_prompt(player_input, intent, normalization)
         plan, plan_raw = self.step_plan.run(self.adapter, plan_prompt)
         debug_data["plan"] = {"prompt": plan_prompt, "raw": plan_raw}
 
         # Validation
-        validation_prompt = self._build_validate_prompt(player_input, plan, intent)
+        validation_prompt = self._build_validate_prompt(player_input, plan, intent, normalization)
         (verdict, notes, advance), validate_raw = self.step_validate.run(self.adapter, validation_prompt)
         debug_data["validate"] = {"prompt": validation_prompt, "raw": validate_raw}
         # If invalid, retry planning once with validator notes
         if str(verdict).lower().startswith("revise"):
             plan, plan_raw = self.step_plan.run(
                 self.adapter,
-                self._build_plan_prompt(player_input, intent) + f"\n\nValidator Notes: {notes}",
+                self._build_plan_prompt(player_input, intent, normalization) + f"\n\nValidator Notes: {notes}",
             )
-            validation_prompt = self._build_validate_prompt(player_input, plan, intent)
+            validation_prompt = self._build_validate_prompt(player_input, plan, intent, normalization)
             (verdict, notes, advance), validate_raw = self.step_validate.run(self.adapter, validation_prompt)
             debug_data["validate_retry"] = {"prompt": validation_prompt, "raw": validate_raw}
             debug_data["plan_retry"] = {"prompt": plan_prompt, "raw": plan_raw}
@@ -335,7 +342,7 @@ class Orchestrator:
             self.beats.advance()
 
         # Narration
-        narrate_prompt = self._build_narrate_prompt(player_input, plan, verdict, notes, intent)
+        narrate_prompt = self._build_narrate_prompt(player_input, plan, verdict, notes, intent, normalization)
         narrative, narrate_raw = self.step_narrate.run(self.adapter, narrate_prompt)
         debug_data["narrate"] = {"prompt": narrate_prompt, "raw": narrate_raw}
         recap = ""
@@ -375,6 +382,7 @@ class Orchestrator:
             "story_status": self.story_status,
             "llm_debug": debug_data,
             "intent": self.last_intent,
+            "normalization": normalization,
         }
 
     def generate_intro(self) -> Dict[str, str]:
@@ -433,9 +441,22 @@ class Orchestrator:
             "history": history_turns,
             "nodes": nodes,
             "edges": edges,
+            "normalization": self.last_normalization,
         }
 
-    def _build_plan_prompt(self, player_input: str, intent: Dict[str, Any]) -> str:
+    def _normalization_context(self) -> Dict[str, object]:
+        return {
+            "current_location": self.current_focus[0] if self.current_focus else "",
+            "visible_entities": sorted(self.active_keys),
+            "recent_entities": list(self.current_focus),
+        }
+
+    def _build_plan_prompt(
+        self,
+        player_input: str,
+        intent: Dict[str, Any],
+        normalization: Optional[Dict[str, object]] = None,
+    ) -> str:
         keys = sorted(self.active_keys)
         beat_text = self._beat_guide()
         summary = self._summary_text()
@@ -459,12 +480,17 @@ class Orchestrator:
             # Recent Conversation
             {self.history.as_text(limit=8) or 'No prior conversation.'}
 
-            # Player Input
-            {player_input}
+            {self._format_player_input_for_prompt(player_input, normalization)}
             """
         ).strip()
 
-    def _build_validate_prompt(self, player_input: str, plan: str, intent: Dict[str, Any]) -> str:
+    def _build_validate_prompt(
+        self,
+        player_input: str,
+        plan: str,
+        intent: Dict[str, Any],
+        normalization: Optional[Dict[str, object]] = None,
+    ) -> str:
         keys = sorted(self.active_keys)
         beat_text = self._beat_guide()
         summary = self._summary_text()
@@ -488,15 +514,22 @@ class Orchestrator:
             # Recent Conversation
             {self.history.as_text(limit=8) or 'No prior conversation.'}
 
-            # Player Input
-            {player_input}
+            {self._format_player_input_for_prompt(player_input, normalization)}
 
             # Proposed Plan
             {plan}
             """
         ).strip()
 
-    def _build_narrate_prompt(self, player_input: str, plan: str, verdict: str, notes: str, intent: Dict[str, Any]) -> str:
+    def _build_narrate_prompt(
+        self,
+        player_input: str,
+        plan: str,
+        verdict: str,
+        notes: str,
+        intent: Dict[str, Any],
+        normalization: Optional[Dict[str, object]] = None,
+    ) -> str:
         keys = sorted(self.active_keys)
         beat_text = self._beat_guide()
         summary = self._summary_text()
@@ -520,8 +553,7 @@ class Orchestrator:
             # Recent Conversation
             {self.history.as_text(limit=8) or 'No prior conversation.'}
 
-            # Player Input
-            {player_input}
+            {self._format_player_input_for_prompt(player_input, normalization)}
 
             # Validated Plan
             {plan}
@@ -532,7 +564,12 @@ class Orchestrator:
             """
         ).strip()
 
-    def _build_focus_prompt(self, player_input: str, intent: Dict[str, Any]) -> str:
+    def _build_focus_prompt(
+        self,
+        player_input: str,
+        intent: Dict[str, Any],
+        normalization: Optional[Dict[str, object]] = None,
+    ) -> str:
         keys = sorted(self.active_keys)
         return textwrap.dedent(
             f"""
@@ -542,8 +579,7 @@ class Orchestrator:
             # Available Nodes
             {', '.join(keys)}
 
-            # Player Input
-            {player_input}
+            {self._format_player_input_for_prompt(player_input, normalization)}
             """
         ).strip()
 
@@ -561,16 +597,52 @@ class Orchestrator:
             """
         ).strip()
 
-    def _build_intent_prompt(self, player_input: str) -> str:
+    def _build_intent_prompt(
+        self,
+        player_input: str,
+        normalization: Optional[Dict[str, object]] = None,
+    ) -> str:
         return textwrap.dedent(
             f"""
             # Recent Conversation
             {self.history.as_text(limit=6) or 'No prior conversation.'}
 
-            # Player Input
-            {player_input}
+            {self._format_player_input_for_prompt(player_input, normalization)}
             """
         ).strip()
+
+    def _format_player_input_for_prompt(
+        self,
+        player_input: str,
+        normalization: Optional[Dict[str, object]],
+    ) -> str:
+        lines = [
+            "# Player Input (Original)",
+            player_input,
+        ]
+        if not normalization:
+            return "\n".join(lines)
+
+        normalized_text = str(normalization.get("normalized_text") or "").strip()
+        normalized_intent = normalization.get("normalized_intent") or {}
+        action_id = str(normalized_intent.get("action_id") or "None")
+        target_ids = normalized_intent.get("target_ids") or []
+        targets_text = ", ".join(str(t) for t in target_ids) if target_ids else "None"
+        ambiguity_count = len(normalization.get("ambiguities") or [])
+
+        lines.extend(
+            [
+                "",
+                "# Player Input (Normalized)",
+                normalized_text or player_input,
+                "",
+                "# Normalization Hints",
+                f"Action ID: {action_id}",
+                f"Target IDs: {targets_text}",
+                f"Ambiguities: {ambiguity_count}",
+            ]
+        )
+        return "\n".join(lines)
 
     def _apply_intent_to_focus(self, intent: Dict[str, Any], player_input: str) -> None:
         """

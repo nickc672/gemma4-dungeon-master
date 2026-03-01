@@ -2,3 +2,7 @@ fastmcp==2.*          # MCP helper
 pydantic==2.*         # models
 psycopg[binary]==3.*  # Postgres driver (no system libpq needed)
 streamlit==1.*        # UI
+wordfreq==3.*         # frequency dictionary
+nltk==3.*             # WordNet access
+rapidfuzz==3.*        # optional fuzzy matching
+pytest==8.*           # test runner

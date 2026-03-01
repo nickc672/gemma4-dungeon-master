@@ -1,0 +1,118 @@
+{
+  "actions": [
+    {
+      "concept_id": "ACT_ENTER",
+      "canonical_text": "enter",
+      "aliases": ["enter"]
+    },
+    {
+      "concept_id": "ACT_EXIT",
+      "canonical_text": "exit",
+      "aliases": ["exit", "leave"]
+    },
+    {
+      "concept_id": "ACT_TAKE",
+      "canonical_text": "take",
+      "aliases": ["take"]
+    },
+    {
+      "concept_id": "ACT_EXAMINE",
+      "canonical_text": "examine",
+      "aliases": ["examine", "inspect"]
+    },
+    {
+      "concept_id": "ACT_TALK",
+      "canonical_text": "talk",
+      "aliases": ["talk", "speak"]
+    },
+    {
+      "concept_id": "ACT_MOVE",
+      "canonical_text": "move",
+      "aliases": ["move", "travel", "approach", "go toward", "go towards", "head toward", "head towards"]
+    },
+    {
+      "concept_id": "ACT_ATTACK",
+      "canonical_text": "attack",
+      "aliases": ["attack", "strike", "hit"]
+    },
+    {
+      "concept_id": "ACT_CAST",
+      "canonical_text": "cast",
+      "aliases": ["cast", "spellcast", "use magic"]
+    },
+    {
+      "concept_id": "ACT_HIDE",
+      "canonical_text": "hide",
+      "aliases": ["hide", "conceal"]
+    },
+    {
+      "concept_id": "ACT_JUMP",
+      "canonical_text": "jump",
+      "aliases": ["jump", "leap", "hop"]
+    }
+  ],
+  "abilities": [
+    {
+      "concept_id": "ABIL_PERCEPTION",
+      "canonical_text": "perception",
+      "aliases": ["perception", "spot", "notice"]
+    },
+    {
+      "concept_id": "ABIL_INVESTIGATION",
+      "canonical_text": "investigation",
+      "aliases": ["investigation", "search", "deduce"]
+    },
+    {
+      "concept_id": "ABIL_STEALTH",
+      "canonical_text": "stealth",
+      "aliases": ["stealth", "sneak", "quietly"]
+    },
+    {
+      "concept_id": "ABIL_ATHLETICS",
+      "canonical_text": "athletics",
+      "aliases": ["athletics", "climb", "vault"]
+    },
+    {
+      "concept_id": "ABIL_ACROBATICS",
+      "canonical_text": "acrobatics",
+      "aliases": ["acrobatics", "tumble", "balance"]
+    },
+    {
+      "concept_id": "ABIL_INSIGHT",
+      "canonical_text": "insight",
+      "aliases": ["insight", "read motive", "read them"]
+    },
+    {
+      "concept_id": "ABIL_PERSUASION",
+      "canonical_text": "persuasion",
+      "aliases": ["persuasion", "convince", "talk down"]
+    },
+    {
+      "concept_id": "ABIL_INTIMIDATION",
+      "canonical_text": "intimidation",
+      "aliases": ["intimidation", "threaten", "cow"]
+    },
+    {
+      "concept_id": "ABIL_DECEPTION",
+      "canonical_text": "deception",
+      "aliases": ["deception", "lie", "bluff"]
+    },
+    {
+      "concept_id": "ABIL_SURVIVAL",
+      "canonical_text": "survival",
+      "aliases": ["survival", "track", "forage"]
+    }
+  ],
+  "entities": [
+    {
+      "concept_type": "location",
+      "canonical_text": "Copper Cup",
+      "aliases": []
+    },
+    {
+      "concept_type": "location",
+      "canonical_text": "Harbor Gate",
+      "aliases": []
+    }
+  ]
+}
