@@ -81,6 +81,25 @@ def _summary_snippet(text: str, limit: int = 220) -> str:
         return cleaned
     return cleaned[:limit].rstrip() + "..."
 
+
+def _mentions_unresolved_roll_request(text: str) -> bool:
+    cleaned = " ".join(str(text or "").lower().split())
+    if not cleaned:
+        return False
+    markers = (
+        "roll",
+        "skill check",
+        "make a check",
+        "passive perception",
+        "dc ",
+        "investigation check",
+        "perception check",
+        "stealth check",
+        "persuasion check",
+        "athletics check",
+    )
+    return any(marker in cleaned for marker in markers)
+
 class StoryEngine:
 
     def __init__(
@@ -373,10 +392,19 @@ class StoryEngine:
             args = dict(arguments or {})
             turn_ctx["current_location"] = self.game_state.player_location
 
-            # Hidden runtime behavior: in manual roll mode, the CLI can supply the player's d20
-            # while the model still calls the same `skill_check` tool and receives a normal result.
+            # Hidden runtime behavior: in manual roll mode, the UI/CLI can supply the player's d20
+            # while the model still calls normal mechanics tools and receives normal tool payloads.
+            manual_roll_supported = False
+            if tool_name == "skill_check":
+                manual_roll_supported = True
+            elif tool_name == "roll_dice":
+                try:
+                    manual_roll_supported = int(args.get("sides", 20)) == 20 and int(args.get("count", 1)) == 1
+                except (TypeError, ValueError):
+                    manual_roll_supported = False
+
             if (
-                tool_name == "skill_check"
+                manual_roll_supported
                 and self.roll_mode == "manual"
                 and callable(self.manual_roll_provider)
                 and "_manual_roll" not in args
@@ -444,6 +472,12 @@ class StoryEngine:
                 return "Every response must begin with `Decision Summary: ...`."
             if len(tool_calls) > 1:
                 return "Use at most one tool call per response."
+            if (
+                str(turn_ctx.get("phase", "")).strip().lower() == "mechanics"
+                and not tool_calls
+                and _mentions_unresolved_roll_request(assistant_text)
+            ):
+                return "If a roll/check is needed, call `skill_check` in mechanics. Do not defer player rolls to narration."
             return None
 
         def intent_stop_hook(assistant_text: str, _stop_hook_active: bool) -> Optional[str]:

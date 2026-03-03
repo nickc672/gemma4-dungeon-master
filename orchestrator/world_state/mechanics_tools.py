@@ -12,6 +12,7 @@ def roll_dice(
     count: int = 1,
     modifier: int = 0,
     label: str = "",
+    _manual_roll: int | None = None,
     game_state: GameState | None = None,
 ) -> dict[str, object]:
     _ = game_state
@@ -24,7 +25,15 @@ def roll_dice(
     if count < 1 or count > 20:
         return {"success": False, "reason": "count must be between 1 and 20."}
 
-    rolls = [random.randint(1, sides) for _ in range(count)]
+    if _manual_roll is not None:
+        if sides != 20 or count != 1:
+            return {"success": False, "reason": "manual roll override only supports 1d20."}
+        roll_value = int(_manual_roll)
+        if roll_value < 1 or roll_value > 20:
+            return {"success": False, "reason": "manual d20 roll must be between 1 and 20."}
+        rolls = [roll_value]
+    else:
+        rolls = [random.randint(1, sides) for _ in range(count)]
     subtotal = sum(rolls)
     total = subtotal + modifier
     return {

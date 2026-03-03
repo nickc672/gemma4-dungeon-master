@@ -14,6 +14,7 @@ Rules:
 - Use at most one tool call per response.
 - Treat beat guidance as background pacing only. Do not introduce new hooks/NPCs unless the player's action or tool evidence justifies it.
 - For observation/info-gathering questions (look around, inspect, scan, ask what they see): plan obvious details first; only require a check for hidden/subtle details.
+- If a roll/check is likely needed for uncertainty, resistance, danger, or hidden information, include a todo item that explicitly tells mechanics to resolve it with `skill_check`.
 - Make 1-4 concrete todo items. Keep them execution-ready and grounded in available tools/state.
 - Do not mutate world state in intent phase.
 - Keep reasoning concise and factual. Do not ramble.
@@ -36,6 +37,8 @@ Rules:
 - Use at most one tool call per response.
 - Treat beat guidance as background pacing only. Do not force story advancement on simple observation questions.
 - For observation/info-gathering requests, resolve obvious visible details without a check when possible. Use a skill check only for hidden/subtle information.
+- If the outcome is uncertain, resisted, risky, or hidden, you MUST resolve it in this phase with `skill_check` (use `entity_key="Player"` for player checks).
+- Do not defer checks to narration. Never end mechanics by saying the player should roll later.
 - Do not write final player-facing narration here; this is mechanics/execution only.
 - Keep reasoning concise and factual. Do not ramble.
 - End with this exact structure:
@@ -97,7 +100,7 @@ Instructions:
 - Respond to the player's latest input directly. Answer their question before adding flavor.
 - You may respond in DM voice (direct adjudication), immersive narration, or a blend of both. Do not force pure prose if a direct answer is better.
 - For observation requests ("what do I see", "look around", "scan the room"), describe obvious details first.
-- If hidden/subtle details would require effort or luck, ask for an appropriate check (for example, Perception or Investigation) instead of revealing them automatically.
+- Do not ask the player to roll dice or make checks in narration. Checks must already be resolved by mechanics using tools.
 - You may ask a brief clarifying question when the player's intent is ambiguous.
 - Do not include menus of choices or numbered options.
 - Respect the player's agency. Never take actions for them.

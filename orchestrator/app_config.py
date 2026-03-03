@@ -37,6 +37,29 @@ def get_ollama_default_model() -> str:
     return model.strip()
 
 
+def get_ollama_model_choices() -> list[str]:
+    default_model = get_ollama_default_model()
+    raw_choices = _get_ollama_section().get("model_choices")
+    if raw_choices is None:
+        return [default_model]
+    if not isinstance(raw_choices, list):
+        raise ValueError("Config key 'ollama.model_choices' must be an array of strings")
+
+    choices: list[str] = []
+    for item in raw_choices:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError("Config key 'ollama.model_choices' entries must be non-empty strings")
+        normalized = item.strip()
+        if normalized not in choices:
+            choices.append(normalized)
+
+    if not choices:
+        raise ValueError("Config key 'ollama.model_choices' must contain at least one model string")
+    if default_model not in choices:
+        choices.insert(0, default_model)
+    return choices
+
+
 def get_ollama_default_options() -> dict[str, Any]:
     options = _get_ollama_section().get("default_options", {})
     if not isinstance(options, dict):
