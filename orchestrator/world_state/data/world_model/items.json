@@ -1,5 +1,43 @@
 [
   {
+    "key": "Arcane Chalk Fragment",
+    "name": "Arcane Chalk Fragment",
+    "description": "A chipped stick of silvery chalk used for ward circles and memory-binding sigils.",
+    "holder_kind": "location",
+    "holder_key": "Wizard's House",
+    "portable": true,
+    "tags": [
+      "arcane",
+      "clue",
+      "ritual"
+    ]
+  },
+  {
+    "key": "Barracks Keyring",
+    "name": "Barracks Keyring",
+    "description": "Iron keys for holding lockers, armory racks, and patrol report cabinets.",
+    "holder_kind": "entity",
+    "holder_key": "Captain Varr",
+    "portable": true,
+    "tags": [
+      "key_item",
+      "watch"
+    ]
+  },
+  {
+    "key": "Bent Lockpick Set",
+    "name": "Bent Lockpick Set",
+    "description": "A wrapped set of picks missing one fine hook, likely used hard against stubborn locks.",
+    "holder_kind": "entity",
+    "holder_key": "Street Urchin Pip",
+    "portable": true,
+    "tags": [
+      "tool",
+      "rogue",
+      "contraband"
+    ]
+  },
+  {
     "key": "Bronze Fountain Coin",
     "name": "Bronze Fountain Coin",
     "description": "A battered bronze coin wedged between the stones of the central fountain.",
@@ -7,7 +45,8 @@
     "holder_key": "Town Square",
     "portable": true,
     "tags": [
-      "coin"
+      "coin",
+      "minor_clue"
     ]
   },
   {
@@ -17,7 +56,24 @@
     "holder_kind": "location",
     "holder_key": "Old Shrine",
     "portable": true,
-    "tags": []
+    "tags": [
+      "charm",
+      "religious",
+      "token"
+    ]
+  },
+  {
+    "key": "Cellar Brass Ring",
+    "name": "Cellar Brass Ring",
+    "description": "A brass keyring with one polished key worn smooth from daily use at the Copper Cup storeroom door.",
+    "holder_kind": "entity",
+    "holder_key": "Mara",
+    "portable": true,
+    "tags": [
+      "key_item",
+      "tavern",
+      "code_access"
+    ]
   },
   {
     "key": "Cracked Spyglass",
@@ -26,7 +82,11 @@
     "holder_kind": "location",
     "holder_key": "Harbor Gate",
     "portable": true,
-    "tags": []
+    "tags": [
+      "tool",
+      "harbor",
+      "clue"
+    ]
   },
   {
     "key": "Frayed Mooring Rope",
@@ -36,7 +96,9 @@
     "holder_key": "Docks",
     "portable": true,
     "tags": [
-      "clue"
+      "clue",
+      "harbor",
+      "forensic"
     ]
   },
   {
@@ -46,7 +108,11 @@
     "holder_kind": "location",
     "holder_key": "Watch Barracks",
     "portable": true,
-    "tags": []
+    "tags": [
+      "signet",
+      "watch",
+      "clue"
+    ]
   },
   {
     "key": "Hidden Alley Knife",
@@ -55,7 +121,11 @@
     "holder_kind": "location",
     "holder_key": "East Alley",
     "portable": true,
-    "tags": []
+    "tags": [
+      "weapon",
+      "clue",
+      "concealed"
+    ]
   },
   {
     "key": "Hidden Scrap",
@@ -65,6 +135,21 @@
     "holder_key": "Bar Counter",
     "portable": true,
     "tags": [
+      "note",
+      "clue",
+      "code_hint"
+    ]
+  },
+  {
+    "key": "Night Patrol Logbook",
+    "name": "Night Patrol Logbook",
+    "description": "A worn ledger listing patrol routes with several entries crossed out and rewritten.",
+    "holder_kind": "location",
+    "holder_key": "Watch Barracks",
+    "portable": true,
+    "tags": [
+      "document",
+      "watch",
       "clue"
     ]
   },
@@ -75,7 +160,36 @@
     "holder_kind": "location",
     "holder_key": "Temple of the Tide",
     "portable": true,
-    "tags": []
+    "tags": [
+      "religious",
+      "clue",
+      "temple"
+    ]
+  },
+  {
+    "key": "Shattered Lantern Glass",
+    "name": "Shattered Lantern Glass",
+    "description": "A pouch of carefully collected lantern shards from the bridge, some edges marked with dried reddish residue.",
+    "holder_kind": "location",
+    "holder_key": "South Bridge",
+    "portable": true,
+    "tags": [
+      "clue",
+      "forensic"
+    ]
+  },
+  {
+    "key": "Silver Memory Vial",
+    "name": "Silver Memory Vial",
+    "description": "A stoppered silver vial etched with runes designed to hold a single memory imprint for later restoration.",
+    "holder_kind": "entity",
+    "holder_key": "Town Wizard Arlen",
+    "portable": true,
+    "tags": [
+      "arcane",
+      "memory_magic",
+      "high_value"
+    ]
   },
   {
     "key": "Smugglers' Ledger",
@@ -85,7 +199,21 @@
     "holder_key": "Warehouse Row",
     "portable": true,
     "tags": [
-      "clue"
+      "clue",
+      "document",
+      "contraband"
+    ]
+  },
+  {
+    "key": "Wax-Sealed Incident Packet",
+    "name": "Wax-Sealed Incident Packet",
+    "description": "A tied packet of witness statements and guard notes marked for the mayors desk.",
+    "holder_kind": "location",
+    "holder_key": "Town Hall",
+    "portable": true,
+    "tags": [
+      "document",
+      "evidence"
     ]
   },
   {
@@ -97,7 +225,21 @@
     "portable": true,
     "tags": [
       "notice",
-      "lead"
+      "lead",
+      "document"
+    ]
+  },
+  {
+    "key": "Woodcutter's Axe",
+    "name": "Woodcutter's Axe",
+    "description": "A heavy ash-wood axe with a nicked steel head. The haft has fresh grip marks and old dark staining near the pommel.",
+    "holder_kind": "entity",
+    "holder_key": "Mitch",
+    "portable": true,
+    "tags": [
+      "tool",
+      "weapon",
+      "suspicious"
     ]
   }
 ]

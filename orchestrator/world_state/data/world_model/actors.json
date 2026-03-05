@@ -1,5 +1,646 @@
 [
   {
+    "key": "Boatman Jaro",
+    "name": "Boatman Jaro",
+    "entity_type": "npc",
+    "description": "Jaro tends a small skiff tied to a worn post. For the right price, he'll ferry people quietly along the river\u2014or look the other way when others do.",
+    "location": "Riverside Path",
+    "skills": {
+      "athletics": 2,
+      "survival": 2,
+      "perception": 2,
+      "insight": 1
+    },
+    "stats": {
+      "strength": 12,
+      "dexterity": 12,
+      "constitution": 12,
+      "intelligence": 10,
+      "wisdom": 11,
+      "charisma": 10
+    },
+    "tags": [
+      "riverfolk",
+      "ferry",
+      "informant"
+    ],
+    "memory": [
+      "Jaro has ferried people along the river after curfew and noticed several passengers unable to recall the trip by morning.",
+      "He once found muddy footprints ending at Riverside Path with no matching return trail."
+    ]
+  },
+  {
+    "key": "Bridge Watcher Sol",
+    "name": "Bridge Watcher Sol",
+    "entity_type": "npc",
+    "description": "Sol leans on the bridge railing during most evening watches, counting lanterns and noting who comes and goes along the river path.",
+    "location": "South Bridge",
+    "skills": {
+      "athletics": 3,
+      "perception": 2,
+      "intimidation": 2,
+      "insight": 1
+    },
+    "stats": {
+      "strength": 13,
+      "dexterity": 12,
+      "constitution": 12,
+      "intelligence": 10,
+      "wisdom": 11,
+      "charisma": 10
+    },
+    "tags": [
+      "watch",
+      "night_shift"
+    ],
+    "memory": [
+      "Sol logs lantern checks and has noted repeated late-night crossings that no one later remembers making.",
+      "He heard shouting near the South Bridge on a storm night, then silence and no witnesses."
+    ]
+  },
+  {
+    "key": "Brin",
+    "name": "Brin",
+    "entity_type": "npc",
+    "description": "Mara's husband. A weather-beaten sailor with a limp. Forgetful of his wedding anniversary date.",
+    "location": "Copper Cup",
+    "skills": {
+      "athletics": 2,
+      "survival": 2,
+      "perception": 2,
+      "insight": 1
+    },
+    "stats": {
+      "strength": 12,
+      "dexterity": 12,
+      "constitution": 12,
+      "intelligence": 10,
+      "wisdom": 11,
+      "charisma": 10
+    },
+    "tags": [
+      "sailor",
+      "local"
+    ],
+    "memory": [
+      "Brin swears he locked the storeroom himself, but sometimes wakes unsure whether he worked the late shift at all.",
+      "He trusts Mara and avoids speaking openly about the stains in front of strangers."
+    ]
+  },
+  {
+    "key": "Captain Varr",
+    "name": "Captain Varr",
+    "entity_type": "npc",
+    "description": "Captain Varr is a broad-shouldered veteran with a scar along his jaw. He takes the town's safety personally and has little patience for fools, but respects those who pull their weight.",
+    "location": "Watch Barracks",
+    "skills": {
+      "athletics": 3,
+      "perception": 2,
+      "intimidation": 2,
+      "insight": 1
+    },
+    "stats": {
+      "strength": 13,
+      "dexterity": 12,
+      "constitution": 12,
+      "intelligence": 10,
+      "wisdom": 11,
+      "charisma": 10
+    },
+    "tags": [
+      "watch",
+      "authority"
+    ],
+    "memory": [
+      "Varr has increased patrol rotations because reports cluster around the same hours before dawn.",
+      "He is suspicious of the wizard, but equally concerned that fear is pushing townsfolk toward vigilantism."
+    ]
+  },
+  {
+    "key": "Caretaker Ilya",
+    "name": "Caretaker Ilya",
+    "entity_type": "npc",
+    "description": "Ilya quietly cleans the old shrine and replaces wilted offerings. She claims to have seen strange lights near the well on stormy nights.",
+    "location": "Old Shrine",
+    "skills": {
+      "insight": 3,
+      "medicine": 3,
+      "religion": 2,
+      "perception": 2
+    },
+    "stats": {
+      "strength": 9,
+      "dexterity": 10,
+      "constitution": 11,
+      "intelligence": 12,
+      "wisdom": 15,
+      "charisma": 12
+    },
+    "tags": [
+      "shrine",
+      "caretaker",
+      "omens"
+    ],
+    "memory": [
+      "Ilya has found fresh offerings at the old shrine placed by hands that later denied visiting.",
+      "She believes the town is caught in a cycle that repeats each night with pieces missing each morning."
+    ]
+  },
+  {
+    "key": "Cleric Serah",
+    "name": "Cleric Serah",
+    "entity_type": "npc",
+    "description": "Serah, a middle-aged cleric of the sea goddess, tends to sailors and townsfolk alike. She listens more than she speaks and keeps a careful eye on omens from the harbor\u2014and on the strange emptiness in the eyes of those who wake up with blood on their doorsteps.",
+    "location": "Temple of the Tide",
+    "skills": {
+      "insight": 3,
+      "medicine": 3,
+      "religion": 2,
+      "perception": 2
+    },
+    "stats": {
+      "strength": 9,
+      "dexterity": 10,
+      "constitution": 11,
+      "intelligence": 12,
+      "wisdom": 15,
+      "charisma": 12
+    },
+    "tags": [
+      "temple",
+      "healer",
+      "trusted"
+    ],
+    "memory": [
+      "Serah has treated people with stress wounds and torn clothing they cannot explain.",
+      "She keeps private notes on recurring symbols linked to the bloodstains and memory lapses."
+    ]
+  },
+  {
+    "key": "Cook Brenna",
+    "name": "Cook Brenna",
+    "entity_type": "npc",
+    "description": "Brenna is the Copper Cup's harried cook, always juggling pots and shouting orders through the kitchen door. She hears everything that happens near the back rooms.",
+    "location": "Back Door - Copper Cup",
+    "skills": {
+      "athletics": 3,
+      "survival": 2,
+      "perception": 1
+    },
+    "stats": {
+      "strength": 14,
+      "dexterity": 11,
+      "constitution": 13,
+      "intelligence": 9,
+      "wisdom": 10,
+      "charisma": 9
+    },
+    "tags": [
+      "tavern",
+      "staff"
+    ],
+    "memory": [
+      "Brenna hears every argument near the back door and noticed Mitch pacing there before dawn twice this week.",
+      "She remembers seeing dark smears on a crate that were gone after sunrise."
+    ]
+  },
+  {
+    "key": "Deckhand Finn",
+    "name": "Deckhand Finn",
+    "entity_type": "npc",
+    "description": "Finn is a young deckhand with rope-burned hands and boundless curiosity. He listens in on sailor gossip and can point out trouble brewing on the piers.",
+    "location": "Docks",
+    "skills": {
+      "athletics": 2,
+      "survival": 2,
+      "perception": 2,
+      "insight": 1
+    },
+    "stats": {
+      "strength": 12,
+      "dexterity": 12,
+      "constitution": 12,
+      "intelligence": 10,
+      "wisdom": 11,
+      "charisma": 10
+    },
+    "tags": [
+      "dockworker",
+      "gossip"
+    ],
+    "memory": [
+      "Finn saw someone rinsing a rope at the dock pump well past curfew.",
+      "He spreads rumors quickly but gets details right more often than people expect."
+    ]
+  },
+  {
+    "key": "Dockmaster Hara",
+    "name": "Dockmaster Hara",
+    "entity_type": "npc",
+    "description": "Hara keeps a ledger tucked under one arm as she strides up and down the docks. She knows which ships arrived late, which cargo went missing, and which captains owe favors. She is quietly furious about the unexplained stains turning up near her warehouses.",
+    "location": "Docks",
+    "skills": {
+      "persuasion": 3,
+      "insight": 2,
+      "investigation": 2,
+      "deception": 1
+    },
+    "stats": {
+      "strength": 10,
+      "dexterity": 11,
+      "constitution": 10,
+      "intelligence": 12,
+      "wisdom": 12,
+      "charisma": 13
+    },
+    "tags": [
+      "harbor",
+      "authority"
+    ],
+    "memory": [
+      "Hara tracks cargo and says missing-hour gaps line up with unexplained ledger discrepancies.",
+      "She quietly suspects a cover-up larger than simple dockside crime."
+    ]
+  },
+  {
+    "key": "Edda",
+    "name": "Edda",
+    "entity_type": "npc",
+    "description": "A scholar cataloging tavern legends, forever scribbling into a leather folio.",
+    "location": "Copper Cup",
+    "skills": {
+      "history": 4,
+      "investigation": 3,
+      "insight": 2,
+      "arcana": 2
+    },
+    "stats": {
+      "strength": 9,
+      "dexterity": 11,
+      "constitution": 10,
+      "intelligence": 15,
+      "wisdom": 13,
+      "charisma": 11
+    },
+    "tags": [
+      "scholar",
+      "observer"
+    ],
+    "memory": [
+      "Edda is cataloging oral histories and noticed old legends describing memory theft tied to blood oaths.",
+      "She thinks the present crisis mirrors a partial account from decades ago."
+    ]
+  },
+  {
+    "key": "Fence Caris",
+    "name": "Fence Caris",
+    "entity_type": "npc",
+    "description": "Caris leans in the shadows near a back door, dealing in small stolen goods and no questions asked. She prefers to stay out of sight when guards are near.",
+    "location": "East Alley",
+    "skills": {
+      "stealth": 4,
+      "sleight_of_hand": 3,
+      "investigation": 2,
+      "deception": 2,
+      "perception": 2
+    },
+    "stats": {
+      "strength": 10,
+      "dexterity": 14,
+      "constitution": 11,
+      "intelligence": 12,
+      "wisdom": 11,
+      "charisma": 13
+    },
+    "tags": [
+      "underworld",
+      "fence"
+    ],
+    "memory": [
+      "Caris sold lock tools to someone matching Mitch's build, but keeps that detail close.",
+      "She avoids the Smugglers Entrance on nights when the moon is hidden."
+    ]
+  },
+  {
+    "key": "Fisher Mira",
+    "name": "Fisher Mira",
+    "entity_type": "npc",
+    "description": "Mira cleans fish with quick, practiced motions, humming an old sea-song under her breath. She keeps an eye on the river for signs of storms or trouble, and she is one of the few who admits she sometimes wakes up with her boots wet and no memory of why.",
+    "location": "Fishermen's Shacks",
+    "skills": {
+      "athletics": 2,
+      "survival": 2,
+      "perception": 2,
+      "insight": 1
+    },
+    "stats": {
+      "strength": 12,
+      "dexterity": 12,
+      "constitution": 12,
+      "intelligence": 10,
+      "wisdom": 11,
+      "charisma": 10
+    },
+    "tags": [
+      "riverfolk",
+      "witness"
+    ],
+    "memory": [
+      "Mira has awakened with wet boots and river silt in her doorway despite no memory of leaving bed.",
+      "She trusts cleric Serah more than the watch to handle delicate truths."
+    ]
+  },
+  {
+    "key": "Fisher Rian",
+    "name": "Fisher Rian",
+    "entity_type": "npc",
+    "description": "Rian mends nets on an upturned crate outside his shack, grumbling about changing tides and strange catches pulled from deeper waters.",
+    "location": "Fishermen's Shacks",
+    "skills": {
+      "athletics": 3,
+      "survival": 2,
+      "perception": 1
+    },
+    "stats": {
+      "strength": 14,
+      "dexterity": 11,
+      "constitution": 13,
+      "intelligence": 9,
+      "wisdom": 10,
+      "charisma": 9
+    },
+    "tags": [
+      "riverfolk"
+    ],
+    "memory": [
+      "Rian has pulled torn cloth and dark residue from his nets at dawn several times.",
+      "He believes someone is moving bodies or evidence by water before sunrise."
+    ]
+  },
+  {
+    "key": "Fishmonger Talo",
+    "name": "Fishmonger Talo",
+    "entity_type": "npc",
+    "description": "Talo's stall overflows with the day's catch laid over crushed ice. He knows every captain on the docks and the gossip that rides in with their ships.",
+    "location": "Market Stalls",
+    "skills": {
+      "persuasion": 3,
+      "insight": 2,
+      "investigation": 2,
+      "deception": 1
+    },
+    "stats": {
+      "strength": 10,
+      "dexterity": 11,
+      "constitution": 10,
+      "intelligence": 12,
+      "wisdom": 12,
+      "charisma": 13
+    },
+    "tags": [
+      "market",
+      "merchant"
+    ],
+    "memory": [
+      "Talo hears gossip from every crew and says fear has cut evening market traffic in half.",
+      "He remembers seeing Mitch buy extra lamp oil on a night now missing from many memories."
+    ]
+  },
+  {
+    "key": "Foreman Kesh",
+    "name": "Foreman Kesh",
+    "entity_type": "npc",
+    "description": "Kesh oversees the loading crews with a barked order and a sharp eye. He insists everything is above board, but his ledgers don't always match what moves in the night.",
+    "location": "Warehouse Row",
+    "skills": {
+      "athletics": 3,
+      "survival": 2,
+      "perception": 1
+    },
+    "stats": {
+      "strength": 14,
+      "dexterity": 11,
+      "constitution": 13,
+      "intelligence": 9,
+      "wisdom": 10,
+      "charisma": 9
+    },
+    "tags": [
+      "warehouse",
+      "foreman"
+    ],
+    "memory": [
+      "Kesh has corrected warehouse counts after nights when workers insist they never unloaded cargo.",
+      "He knows Lia uses the tunnels but denies official knowledge."
+    ]
+  },
+  {
+    "key": "Gate Guard Ren",
+    "name": "Gate Guard Ren",
+    "entity_type": "npc",
+    "description": "Ren leans on his spear at the harbor gate, sizing up everyone who passes. He's seen enough trouble to be wary, but a kind word or shared drink can loosen his tongue.",
+    "location": "Harbor Gate",
+    "skills": {
+      "athletics": 3,
+      "perception": 2,
+      "intimidation": 2,
+      "insight": 1
+    },
+    "stats": {
+      "strength": 13,
+      "dexterity": 12,
+      "constitution": 12,
+      "intelligence": 10,
+      "wisdom": 11,
+      "charisma": 10
+    },
+    "tags": [
+      "watch",
+      "checkpoint"
+    ],
+    "memory": [
+      "Ren has turned away travelers after midnight because too many arrived confused and bloodstained.",
+      "He keeps a mental list of townsfolk who wander at night and deny it by morning."
+    ]
+  },
+  {
+    "key": "Lysa",
+    "name": "Lysa",
+    "entity_type": "npc",
+    "description": "A traveling bard tuning a battered lute, eager for new tales.",
+    "location": "Copper Cup",
+    "skills": {
+      "performance": 4,
+      "deception": 2,
+      "perception": 2,
+      "persuasion": 2
+    },
+    "stats": {
+      "strength": 9,
+      "dexterity": 13,
+      "constitution": 10,
+      "intelligence": 11,
+      "wisdom": 10,
+      "charisma": 14
+    },
+    "tags": [
+      "bard",
+      "traveler"
+    ],
+    "memory": [
+      "Lysa collects songs and rumors and has turned local fear into veiled tavern ballads.",
+      "She noticed patrons forgetting songs she just performed the previous evening."
+    ]
+  },
+  {
+    "key": "Mara",
+    "name": "Mara",
+    "entity_type": "npc",
+    "description": "The proprietor. Married to Brin. Her wedding anniversary is April 15th. Brisk, perceptive, and inclined to help if treated respectfully.",
+    "location": "Bar Counter",
+    "skills": {
+      "persuasion": 3,
+      "insight": 2,
+      "investigation": 2,
+      "deception": 1
+    },
+    "stats": {
+      "strength": 10,
+      "dexterity": 11,
+      "constitution": 10,
+      "intelligence": 12,
+      "wisdom": 12,
+      "charisma": 13
+    },
+    "tags": [
+      "tavern",
+      "proprietor",
+      "informant"
+    ],
+    "memory": [
+      "Mara keeps the storeroom code private and knows someone has tested the lock repeatedly.",
+      "She trusts the player more than most outsiders once they show respect for her staff."
+    ]
+  },
+  {
+    "key": "Mayor Elric",
+    "name": "Mayor Elric",
+    "entity_type": "npc",
+    "description": "Mayor Elric is a tired man in a well-kept coat, juggling merchants' demands and the growing panic over unexplained bloodstains. No one has truly gone missing, but he fears the town is fraying and doesn't know how much longer he can pretend things are under control.",
+    "location": "Town Hall",
+    "skills": {
+      "persuasion": 3,
+      "insight": 2,
+      "investigation": 2,
+      "deception": 1
+    },
+    "stats": {
+      "strength": 10,
+      "dexterity": 11,
+      "constitution": 10,
+      "intelligence": 12,
+      "wisdom": 12,
+      "charisma": 13
+    },
+    "tags": [
+      "civic",
+      "authority"
+    ],
+    "memory": [
+      "Elric is balancing public calm against private panic and has delayed announcing full incident numbers.",
+      "He asked Scribe Loth to archive certain reports until facts can be verified."
+    ]
+  },
+  {
+    "key": "Mitch",
+    "name": "Mitch",
+    "entity_type": "npc",
+    "description": "A broad-shouldered lumberjack with haunted eyes and a strained need for someone to believe him.",
+    "location": "Town Square",
+    "skills": {
+      "athletics": 3,
+      "survival": 2,
+      "perception": 1
+    },
+    "stats": {
+      "strength": 14,
+      "dexterity": 11,
+      "constitution": 13,
+      "intelligence": 9,
+      "wisdom": 10,
+      "charisma": 9
+    },
+    "tags": [
+      "witness",
+      "unstable",
+      "woodcutter",
+      "prime_suspect"
+    ],
+    "memory": [
+      "Mitch says he found one of the first bloodstains near the riverside before dawn.",
+      "Mitch keeps blaming the wizard, but his story shifts when asked for details.",
+      "He wakes exhausted with injuries that suggest violent work he cannot consciously recall."
+    ]
+  },
+  {
+    "key": "Novice Arel",
+    "name": "Novice Arel",
+    "entity_type": "npc",
+    "description": "Arel is a young acolyte sweeping stone floors and lighting candles. Nervous but earnest, they have seen more than Serah realizes and struggle with what to share.",
+    "location": "Temple of the Tide",
+    "skills": {
+      "insight": 3,
+      "medicine": 3,
+      "religion": 2,
+      "perception": 2
+    },
+    "stats": {
+      "strength": 9,
+      "dexterity": 10,
+      "constitution": 11,
+      "intelligence": 12,
+      "wisdom": 15,
+      "charisma": 12
+    },
+    "tags": [
+      "temple",
+      "acolyte"
+    ],
+    "memory": [
+      "Arel has seen late-night visitors begging Serah for memory blessings.",
+      "They found prayer beads near the well after a night of heavy rain and panic bells."
+    ]
+  },
+  {
+    "key": "Old Tellan",
+    "name": "Old Tellan",
+    "entity_type": "npc",
+    "description": "Tellan sits on the well's rim spinning stories for anyone who will listen. Some tales are harmless gossip, others hint at things buried under the town and better left alone. Lately his stories keep circling back to nights no one quite remembers.",
+    "location": "Old Well",
+    "skills": {
+      "history": 4,
+      "investigation": 3,
+      "insight": 2,
+      "arcana": 2
+    },
+    "stats": {
+      "strength": 9,
+      "dexterity": 11,
+      "constitution": 10,
+      "intelligence": 15,
+      "wisdom": 13,
+      "charisma": 11
+    },
+    "tags": [
+      "storyteller",
+      "wellside"
+    ],
+    "memory": [
+      "Tellan claims the old well remembers what people choose to forget.",
+      "His stories repeat specific names and dates that later appear in official reports."
+    ]
+  },
+  {
     "key": "Player",
     "name": "Player",
     "entity_type": "player",
@@ -26,263 +667,33 @@
     ]
   },
   {
-    "key": "Boatman Jaro",
-    "name": "Boatman Jaro",
-    "entity_type": "npc",
-    "description": "Jaro tends a small skiff tied to a worn post. For the right price, he'll ferry people quietly along the river\u2014or look the other way when others do.",
-    "location": "Riverside Path",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Bridge Watcher Sol",
-    "name": "Bridge Watcher Sol",
-    "entity_type": "npc",
-    "description": "Sol leans on the bridge railing during most evening watches, counting lanterns and noting who comes and goes along the river path.",
-    "location": "South Bridge",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Brin",
-    "name": "Brin",
-    "entity_type": "npc",
-    "description": "Mara's husband. A weather-beaten sailor with a limp. Forgetful of his wedding anniversary date.",
-    "location": "Copper Cup",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Captain Varr",
-    "name": "Captain Varr",
-    "entity_type": "npc",
-    "description": "Captain Varr is a broad-shouldered veteran with a scar along his jaw. He takes the town's safety personally and has little patience for fools, but respects those who pull their weight.",
-    "location": "Watch Barracks",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Caretaker Ilya",
-    "name": "Caretaker Ilya",
-    "entity_type": "npc",
-    "description": "Ilya quietly cleans the old shrine and replaces wilted offerings. She claims to have seen strange lights near the well on stormy nights.",
-    "location": "Old Shrine",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Cleric Serah",
-    "name": "Cleric Serah",
-    "entity_type": "npc",
-    "description": "Serah, a middle-aged cleric of the sea goddess, tends to sailors and townsfolk alike. She listens more than she speaks and keeps a careful eye on omens from the harbor\u2014and on the strange emptiness in the eyes of those who wake up with blood on their doorsteps.",
-    "location": "Temple of the Tide",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Cook Brenna",
-    "name": "Cook Brenna",
-    "entity_type": "npc",
-    "description": "Brenna is the Copper Cup's harried cook, always juggling pots and shouting orders through the kitchen door. She hears everything that happens near the back rooms.",
-    "location": "Back Door - Copper Cup",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Deckhand Finn",
-    "name": "Deckhand Finn",
-    "entity_type": "npc",
-    "description": "Finn is a young deckhand with rope-burned hands and boundless curiosity. He listens in on sailor gossip and can point out trouble brewing on the piers.",
-    "location": "Docks",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Dockmaster Hara",
-    "name": "Dockmaster Hara",
-    "entity_type": "npc",
-    "description": "Hara keeps a ledger tucked under one arm as she strides up and down the docks. She knows which ships arrived late, which cargo went missing, and which captains owe favors. She is quietly furious about the unexplained stains turning up near her warehouses.",
-    "location": "Docks",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Edda",
-    "name": "Edda",
-    "entity_type": "npc",
-    "description": "A scholar cataloging tavern legends, forever scribbling into a leather folio.",
-    "location": "Copper Cup",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Fence Caris",
-    "name": "Fence Caris",
-    "entity_type": "npc",
-    "description": "Caris leans in the shadows near a back door, dealing in small stolen goods and no questions asked. She prefers to stay out of sight when guards are near.",
-    "location": "East Alley",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Fisher Mira",
-    "name": "Fisher Mira",
-    "entity_type": "npc",
-    "description": "Mira cleans fish with quick, practiced motions, humming an old sea-song under her breath. She keeps an eye on the river for signs of storms or trouble, and she is one of the few who admits she sometimes wakes up with her boots wet and no memory of why.",
-    "location": "Fishermen's Shacks",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Fisher Rian",
-    "name": "Fisher Rian",
-    "entity_type": "npc",
-    "description": "Rian mends nets on an upturned crate outside his shack, grumbling about changing tides and strange catches pulled from deeper waters.",
-    "location": "Fishermen's Shacks",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Fishmonger Talo",
-    "name": "Fishmonger Talo",
-    "entity_type": "npc",
-    "description": "Talo's stall overflows with the day's catch laid over crushed ice. He knows every captain on the docks and the gossip that rides in with their ships.",
-    "location": "Market Stalls",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Foreman Kesh",
-    "name": "Foreman Kesh",
-    "entity_type": "npc",
-    "description": "Kesh oversees the loading crews with a barked order and a sharp eye. He insists everything is above board, but his ledgers don't always match what moves in the night.",
-    "location": "Warehouse Row",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Gate Guard Ren",
-    "name": "Gate Guard Ren",
-    "entity_type": "npc",
-    "description": "Ren leans on his spear at the harbor gate, sizing up everyone who passes. He's seen enough trouble to be wary, but a kind word or shared drink can loosen his tongue.",
-    "location": "Harbor Gate",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Lysa",
-    "name": "Lysa",
-    "entity_type": "npc",
-    "description": "A traveling bard tuning a battered lute, eager for new tales.",
-    "location": "Copper Cup",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Mara",
-    "name": "Mara",
-    "entity_type": "npc",
-    "description": "The proprietor. Married to Brin. Her wedding anniversary is April 15th. Brisk, perceptive, and inclined to help if treated respectfully.",
-    "location": "Bar Counter",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Mayor Elric",
-    "name": "Mayor Elric",
-    "entity_type": "npc",
-    "description": "Mayor Elric is a tired man in a well-kept coat, juggling merchants' demands and the growing panic over unexplained bloodstains. No one has truly gone missing, but he fears the town is fraying and doesn't know how much longer he can pretend things are under control.",
-    "location": "Town Hall",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Mitch",
-    "name": "Mitch",
-    "entity_type": "npc",
-    "description": "A broad-shouldered lumberjack with haunted eyes and a strained need for someone to believe him.",
-    "location": "Town Square",
-    "skills": {},
-    "stats": {},
-    "tags": [
-      "witness",
-      "unstable"
-    ],
-    "memory": [
-      "Mitch says he found one of the first bloodstains near the riverside before dawn.",
-      "Mitch keeps blaming the wizard, but his story shifts when asked for details."
-    ]
-  },
-  {
-    "key": "Novice Arel",
-    "name": "Novice Arel",
-    "entity_type": "npc",
-    "description": "Arel is a young acolyte sweeping stone floors and lighting candles. Nervous but earnest, they have seen more than Serah realizes and struggle with what to share.",
-    "location": "Temple of the Tide",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
-    "key": "Old Tellan",
-    "name": "Old Tellan",
-    "entity_type": "npc",
-    "description": "Tellan sits on the well's rim spinning stories for anyone who will listen. Some tales are harmless gossip, others hint at things buried under the town and better left alone. Lately his stories keep circling back to nights no one quite remembers.",
-    "location": "Old Well",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
-  },
-  {
     "key": "Scribe Loth",
     "name": "Scribe Loth",
     "entity_type": "npc",
     "description": "Loth is a meticulous scribe surrounded by inkpots and scrolls. He files complaints, tallies taxes, and occasionally buries inconvenient paperwork for the right favor.",
     "location": "Town Hall",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
+    "skills": {
+      "history": 4,
+      "investigation": 3,
+      "insight": 2,
+      "arcana": 2
+    },
+    "stats": {
+      "strength": 9,
+      "dexterity": 11,
+      "constitution": 10,
+      "intelligence": 15,
+      "wisdom": 13,
+      "charisma": 11
+    },
+    "tags": [
+      "civic",
+      "records"
+    ],
+    "memory": [
+      "Loth has filed multiple identical complaints from the same households across different dates.",
+      "He maintains a hidden duplicate ledger because public records keep getting quietly amended."
+    ]
   },
   {
     "key": "Smuggler Lia",
@@ -290,10 +701,29 @@
     "entity_type": "npc",
     "description": "Lia moves quietly through the shadows beneath the warehouses. She trades in information as much as contraband and always seems to know who's asking too many questions.",
     "location": "Smuggler's Entrance",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
+    "skills": {
+      "stealth": 4,
+      "sleight_of_hand": 3,
+      "investigation": 2,
+      "deception": 2,
+      "perception": 2
+    },
+    "stats": {
+      "strength": 10,
+      "dexterity": 14,
+      "constitution": 11,
+      "intelligence": 12,
+      "wisdom": 11,
+      "charisma": 13
+    },
+    "tags": [
+      "underworld",
+      "smuggler"
+    ],
+    "memory": [
+      "Lia uses the tunnel routes and has seen signs of hurried cleanup near Warehouse Row before sunrise.",
+      "She will trade sensitive information for leverage, not loyalty."
+    ]
   },
   {
     "key": "Spice Seller Nima",
@@ -301,10 +731,29 @@
     "entity_type": "npc",
     "description": "Nima sells jars of pungent spices and dried peppers from distant ports. Her keen nose and sharper memory make her a quiet observer of who buys what and why.",
     "location": "Market Stalls",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
+    "skills": {
+      "persuasion": 3,
+      "insight": 2,
+      "investigation": 2,
+      "deception": 1
+    },
+    "stats": {
+      "strength": 10,
+      "dexterity": 11,
+      "constitution": 10,
+      "intelligence": 12,
+      "wisdom": 12,
+      "charisma": 13
+    },
+    "tags": [
+      "market",
+      "merchant",
+      "keen_observer"
+    ],
+    "memory": [
+      "Nima tracks unusual purchases and noticed a spike in lye, lamp oil, and bandages.",
+      "She remembers voices arguing near Old Well just before dawn on market day."
+    ]
   },
   {
     "key": "Street Performer Jorin",
@@ -312,10 +761,28 @@
     "entity_type": "npc",
     "description": "Jorin juggles knives and colored stones for gathered onlookers. Quick with a joke and quicker with his hands, he hears rumors before most anyone else.",
     "location": "Town Square",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
+    "skills": {
+      "performance": 4,
+      "deception": 2,
+      "perception": 2,
+      "persuasion": 2
+    },
+    "stats": {
+      "strength": 9,
+      "dexterity": 13,
+      "constitution": 10,
+      "intelligence": 11,
+      "wisdom": 10,
+      "charisma": 14
+    },
+    "tags": [
+      "performer",
+      "rumor_network"
+    ],
+    "memory": [
+      "Jorin watches faces while performing and can spot who is lying about where they were at night.",
+      "He heard Mitch muttering about red hands that do not stay clean."
+    ]
   },
   {
     "key": "Street Urchin Pip",
@@ -323,10 +790,28 @@
     "entity_type": "npc",
     "description": "Pip is a sharp-eyed child who knows every shortcut and loose shutter in the alleyways. They trade trinkets and rumors in exchange for coin, food, or kindness.",
     "location": "East Alley",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
+    "skills": {
+      "stealth": 4,
+      "sleight_of_hand": 3,
+      "perception": 2,
+      "insight": 1
+    },
+    "stats": {
+      "strength": 8,
+      "dexterity": 14,
+      "constitution": 10,
+      "intelligence": 11,
+      "wisdom": 12,
+      "charisma": 10
+    },
+    "tags": [
+      "streetwise",
+      "informant"
+    ],
+    "memory": [
+      "Pip knows hidden routes between East Alley, the back door, and warehouse drains.",
+      "They found a knife wrap with fresh rust near a loose brick and left it where only they can recover it."
+    ]
   },
   {
     "key": "Thom",
@@ -334,10 +819,28 @@
     "entity_type": "npc",
     "description": "An off-duty guard who prefers order and dislikes surprises upstairs.",
     "location": "Copper Cup",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
+    "skills": {
+      "athletics": 3,
+      "perception": 2,
+      "intimidation": 2,
+      "insight": 1
+    },
+    "stats": {
+      "strength": 13,
+      "dexterity": 12,
+      "constitution": 12,
+      "intelligence": 10,
+      "wisdom": 11,
+      "charisma": 10
+    },
+    "tags": [
+      "watch",
+      "off_duty_guard"
+    ],
+    "memory": [
+      "Thom saw watch reports edited after meetings with the mayor and the wizard.",
+      "He dislikes surprises and reacts poorly when civilians interfere with barracks protocol."
+    ]
   },
   {
     "key": "Town Crier Jessa",
@@ -345,13 +848,27 @@
     "entity_type": "npc",
     "description": "Jessa rings a handbell and repeats the town's latest bad news to anyone who will listen.",
     "location": "Town Square",
-    "skills": {},
-    "stats": {},
+    "skills": {
+      "persuasion": 3,
+      "insight": 2,
+      "investigation": 2,
+      "deception": 1
+    },
+    "stats": {
+      "strength": 10,
+      "dexterity": 11,
+      "constitution": 10,
+      "intelligence": 12,
+      "wisdom": 12,
+      "charisma": 13
+    },
     "tags": [
-      "public_voice"
+      "public_voice",
+      "civic"
     ],
     "memory": [
-      "Jessa has repeated the mayor's warning about unexplained bloodstains all afternoon."
+      "Jessa has repeated emergency notices all day and can recite each official statement verbatim.",
+      "She noticed the wording of town warnings changed three times within two days."
     ]
   },
   {
@@ -360,9 +877,28 @@
     "entity_type": "npc",
     "description": "Arlen is a reclusive wizard who seldom leaves his guarded home. Whispers say he can pluck souls back from the brink and smooth away memories like ink from parchment.",
     "location": "Wizard's House",
-    "skills": {},
-    "stats": {},
-    "tags": [],
-    "memory": []
+    "skills": {
+      "arcana": 5,
+      "investigation": 4,
+      "insight": 3,
+      "history": 3
+    },
+    "stats": {
+      "strength": 8,
+      "dexterity": 12,
+      "constitution": 11,
+      "intelligence": 16,
+      "wisdom": 14,
+      "charisma": 12
+    },
+    "tags": [
+      "arcane",
+      "reclusive",
+      "high_stakes"
+    ],
+    "memory": [
+      "Arlen has used risky memory-working spells to reduce panic after each night of violence.",
+      "He believes containing the cycle is safer than exposing every detail to a terrified public."
+    ]
   }
 ]

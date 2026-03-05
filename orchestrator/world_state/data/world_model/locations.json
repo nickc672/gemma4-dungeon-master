@@ -4,51 +4,74 @@
     "name": "Back Door - Copper Cup",
     "description": "A plain wooden door at the rear of the Copper Cup, used by staff and late-night regulars. Crates and empty barrels stack nearby, and the smell of stew drifts out when it opens. A faint dark streak runs along one stone, as if something was once dragged past in a hurry.",
     "connections": [
-      "East Alley",
       "Copper Cup",
+      "East Alley",
       "Storeroom Door"
     ],
-    "tags": []
+    "tags": [
+      "service",
+      "alley",
+      "tavern"
+    ]
   },
   {
     "key": "Bar Counter",
     "name": "Bar Counter",
-    "description": "Shelves of bottles, a till, and crates tucked beneath. A loose crate hides something wedged behind it.",
+    "description": "Shelves of bottles, a till, and crates tucked beneath a polished counter scarred by years of tankards. Mara keeps this vantage point to monitor every table and every rumor that enters the tavern.",
     "connections": [
       "Copper Cup"
     ],
-    "tags": []
+    "tags": [
+      "interior",
+      "tavern",
+      "social"
+    ]
   },
   {
     "key": "Copper Cup",
     "name": "Copper Cup",
     "description": "A low-beamed harbor tavern. Lanterns swing above crowded tables, and the air smells of stew, sea-salt, and woodsmoke. The barkeep Mara watches everything from behind the counter.",
     "connections": [
+      "Back Door - Copper Cup",
       "Bar Counter",
-      "Stair Landing"
+      "Stair Landing",
+      "Town Square"
     ],
-    "tags": []
+    "tags": [
+      "interior",
+      "tavern",
+      "social",
+      "rumors"
+    ]
   },
   {
     "key": "Docks",
     "name": "Docks",
     "description": "Wooden piers stretch out over dark water, crowded with fishing boats and the occasional merchant ship. Ropes creak, gulls wheel overhead, and the smell of tar and brine hangs thick in the air.",
     "connections": [
+      "Fishermen's Shacks",
       "Harbor Gate",
-      "Warehouse Row",
-      "Fishermen's Shacks"
+      "Warehouse Row"
     ],
-    "tags": []
+    "tags": [
+      "outdoor",
+      "harbor",
+      "labor"
+    ]
   },
   {
     "key": "East Alley",
     "name": "East Alley",
-    "description": "A narrow alley where scrubbed cobbles never quite lose their stains.",
+    "description": "A narrow alley where scrubbed cobbles never quite lose their stains. Laundry lines sway overhead, shutters crack open when footsteps pass, and several doorframes show marks that look recently cleaned.",
     "connections": [
+      "Back Door - Copper Cup",
+      "Old Shrine",
       "Town Square"
     ],
     "tags": [
-      "shadowed"
+      "outdoor",
+      "shadowed",
+      "crime_scene"
     ]
   },
   {
@@ -56,22 +79,32 @@
     "name": "Fishermen's Shacks",
     "description": "A cluster of small wooden shacks perched on pilings above the river. Nets hang to dry, and lantern-light spills from half-open doors late into the night. In more than one doorway, dark stains mar the floorboards with no memory of how they appeared.",
     "connections": [
-      "Riverside Path",
-      "Docks"
+      "Docks",
+      "Riverside Path"
     ],
-    "tags": []
+    "tags": [
+      "outdoor",
+      "residential",
+      "harbor"
+    ]
   },
   {
     "key": "Harbor Gate",
     "name": "Harbor Gate",
     "description": "An archway of weathered stone opening toward the piers. Guard posts on either side watch the flow of carts and sailors between the town and the docks.",
     "connections": [
-      "Town Square",
       "Docks",
-      "Watch Barracks",
-      "Market Stalls"
+      "Market Stalls",
+      "South Bridge",
+      "Town Square",
+      "Warehouse Row",
+      "Watch Barracks"
     ],
-    "tags": []
+    "tags": [
+      "outdoor",
+      "checkpoint",
+      "harbor"
+    ]
   },
   {
     "key": "Lumberyard",
@@ -80,16 +113,24 @@
     "connections": [
       "Riverside Path"
     ],
-    "tags": []
+    "tags": [
+      "outdoor",
+      "labor",
+      "woodcutters"
+    ]
   },
   {
     "key": "Market Stalls",
     "name": "Market Stalls",
-    "description": "Canvas-topped stalls line the edge of the square, half-closed for the evening.",
+    "description": "Canvas-topped stalls ring the edge of the square, half-closed for the evening. Fishmongers rinse boards, spice vendors shutter crates, and everyone trades the same uneasy gossip before heading home.",
     "connections": [
+      "Harbor Gate",
+      "Old Well",
+      "Town Hall",
       "Town Square"
     ],
     "tags": [
+      "outdoor",
       "market",
       "public"
     ]
@@ -102,49 +143,71 @@
       "East Alley",
       "Temple of the Tide"
     ],
-    "tags": []
+    "tags": [
+      "outdoor",
+      "sacred",
+      "quiet"
+    ]
   },
   {
     "key": "Old Well",
     "name": "Old Well",
     "description": "An old stone well at the edge of the square, its rope replaced more than once. Locals say its water never runs dry, and that it connects to forgotten tunnels beneath the town. Faint rust-brown stains cling to some of the stones as though someone once washed something away here.",
     "connections": [
-      "Town Square",
+      "Market Stalls",
       "Smuggler's Entrance",
       "Temple of the Tide",
-      "Market Stalls"
+      "Town Square"
     ],
-    "tags": []
+    "tags": [
+      "outdoor",
+      "mystery_site",
+      "public"
+    ]
   },
   {
     "key": "Riverside Path",
     "name": "Riverside Path",
     "description": "A muddy path following the riverbank toward the outskirts. Reeds whisper in the breeze, and shallow boats are pulled up onto the shore.",
     "connections": [
-      "South Bridge",
-      "Fishermen's Shacks"
+      "Fishermen's Shacks",
+      "Lumberyard",
+      "South Bridge"
     ],
-    "tags": []
+    "tags": [
+      "outdoor",
+      "river",
+      "travel"
+    ]
   },
   {
     "key": "Smuggler's Entrance",
     "name": "Smuggler's Entrance",
     "description": "A half-concealed grate and narrow stone steps leading below the warehouses. The smell of damp and old river-mud clings to the air here.",
     "connections": [
-      "Warehouse Row",
-      "Old Well"
+      "Old Well",
+      "Warehouse Row"
     ],
-    "tags": []
+    "tags": [
+      "hidden",
+      "underground",
+      "crime"
+    ]
   },
   {
     "key": "South Bridge",
     "name": "South Bridge",
     "description": "A low stone bridge arching over a narrow river that feeds the harbor. Lanterns line the parapet, and you can see both the town walls and the distant open sea from its center. More than one passerby has reported waking here with aching feet and no memory of how they arrived.",
     "connections": [
-      "Town Square",
-      "Riverside Path"
+      "Harbor Gate",
+      "Riverside Path",
+      "Town Square"
     ],
-    "tags": []
+    "tags": [
+      "outdoor",
+      "crossing",
+      "river"
+    ]
   },
   {
     "key": "Stair Landing",
@@ -154,35 +217,51 @@
       "Copper Cup",
       "Storeroom Door"
     ],
-    "tags": []
+    "tags": [
+      "interior",
+      "transit",
+      "tavern"
+    ]
   },
   {
     "key": "Storeroom Door",
     "name": "Storeroom Door",
     "description": "A stout oak door with a brass four-dial combination lock. The correct code is 0415.",
     "connections": [
+      "Back Door - Copper Cup",
       "Stair Landing"
     ],
-    "tags": []
+    "tags": [
+      "interior",
+      "locked",
+      "tavern"
+    ]
   },
   {
     "key": "Temple of the Tide",
     "name": "Temple of the Tide",
     "description": "A modest stone temple overlooking the square, its doors carved with waves and storm-clouds. Inside, candles flicker before a statue of a calm, watchful sea goddess. Many townsfolk come here seeking answers for the nights they cannot remember.",
     "connections": [
-      "Town Square",
-      "Old Shrine"
+      "Old Shrine",
+      "Old Well",
+      "Town Square"
     ],
-    "tags": []
+    "tags": [
+      "interior",
+      "sacred",
+      "public"
+    ]
   },
   {
     "key": "Town Hall",
     "name": "Town Hall",
     "description": "A timber-framed civic hall with a cluttered notice board and nervous clerks inside.",
     "connections": [
+      "Market Stalls",
       "Town Square"
     ],
     "tags": [
+      "interior",
       "civic",
       "public"
     ]
@@ -190,15 +269,24 @@
   {
     "key": "Town Square",
     "name": "Town Square",
-    "description": "The cobbled heart of the harbor town, lit by lanterns and restless conversation.",
+    "description": "The cobbled heart of the harbor town, lit by lanterns and restless conversation. Traders, guards, and dockhands all pass through here, and tonight nearly every conversation circles back to bloodstains, lost hours, and blame.",
     "connections": [
+      "Copper Cup",
+      "East Alley",
+      "Harbor Gate",
       "Market Stalls",
+      "Old Well",
+      "South Bridge",
+      "Temple of the Tide",
       "Town Hall",
-      "East Alley"
+      "Watch Barracks",
+      "Wizard's House"
     ],
     "tags": [
+      "outdoor",
       "hub",
-      "public"
+      "public",
+      "rumors"
     ]
   },
   {
@@ -207,19 +295,29 @@
     "description": "A line of squat stone warehouses hugs the waterfront. Their heavy doors and barred windows suggest both valuable cargo and things better kept out of sight. One doorframe bears a faded, rusty smear that no one can quite explain.",
     "connections": [
       "Docks",
+      "Harbor Gate",
       "Smuggler's Entrance"
     ],
-    "tags": []
+    "tags": [
+      "outdoor",
+      "harbor",
+      "trade"
+    ]
   },
   {
     "key": "Watch Barracks",
     "name": "Watch Barracks",
     "description": "A sturdy building flying the town's colors. Racks of spears stand by the door, and off-duty guards swap stories on the steps when the weather is mild.",
     "connections": [
+      "Harbor Gate",
       "Town Square",
-      "Harbor Gate"
+      "Wizard's House"
     ],
-    "tags": []
+    "tags": [
+      "interior",
+      "security",
+      "civic"
+    ]
   },
   {
     "key": "Wizard's House",
@@ -229,6 +327,10 @@
       "Town Square",
       "Watch Barracks"
     ],
-    "tags": []
+    "tags": [
+      "interior",
+      "arcane",
+      "restricted"
+    ]
   }
 ]

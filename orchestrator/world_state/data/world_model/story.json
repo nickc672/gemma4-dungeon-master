@@ -1,11 +1,13 @@
 {
   "starting_location": "Town Square",
-  "starting_state": "Dusk settles over the harbor town as you stand in the middle of its cobbled square. Lanterns flicker to life one by one, and the people moving between the Temple of the Tide, the town hall, and the Copper Cup all wear the same drawn, sleepless look. In hushed tones they talk about bloodstains found in houses all over town, nights they cannot remember, and the town wizard who never seems to leave his guarded home.You've heard strange rumors about this town, about murderous stains with no missing bodies.",
+  "starting_state": "Dusk settles over the harbor town as lanterns flare alive around the cobbles of Town Square. People move with the same exhausted, hollow-eyed rhythm, repeating the same rumors: bloodstains in homes, missing hours, and mornings full of dread with no clear memory of what happened overnight. Some blame the reclusive wizard behind the iron fence, while others whisper that the town itself is cursed. You arrived to verify the rumors, but now you are standing inside them.",
   "beat_list": [
-    "Introduce the town square at dusk, the weary mood of the townsfolk, and rumors of unexplained bloodstains with no missing bodies. Let the player explore until they learn enough about the mystery to proceed with an investigation.",
-    "Once the player encounters Mitch, the anxious lumberjack, he will plead with the newly arrived player in the square to investigate the bloodstains. Mitch will suggest that the Wizard is involved, but very dangerous.",
-    "Let the player freely investigate houses and locations around town to gather clues about the bloodstains, memory gaps, and the reclusive town wizard.",
-    "When the player has gathered enough information to have a theory the wizard will speak with them directly with Mitch in attendance. The wizard will reveal that Mitch is the killer and each night he erases everyones memory and undoes his crimes. Mitch is driven to madness by the revelation and begs the player to kill the Wizard. The Wizard asks the player to put Mitch out of his misery.",
-    "The player can decide to handle the situation however they see fit, including killing either Mitch or the Wizard, trying to convince Mitch to stop, or finding another solution entirely."
+    "Establish the town's mood at dusk in Town Square: fear, fatigue, and rumors of bloodstains without missing bodies.",
+    "Introduce Mitch as the first urgent hook. He asks for help and insists the wizard is involved, but his testimony is inconsistent.",
+    "Let the player investigate freely across civic, dockside, temple, and tavern locations to gather concrete clues and witness accounts.",
+    "Surface contradictions: missing-time reports, cleaned crime scenes, and records that imply someone is repeatedly resetting events.",
+    "Bring the player to a direct confrontation where both Mitch and the wizard can be questioned with evidence in hand.",
+    "Reveal the core truth: Mitch commits killings in a dissociative cycle and the wizard has been erasing/repairing memories to prevent wider panic.",
+    "Resolve by player choice: side with Mitch, side with the wizard, broker a difficult compromise, or pursue an independent solution."
   ]
 }
