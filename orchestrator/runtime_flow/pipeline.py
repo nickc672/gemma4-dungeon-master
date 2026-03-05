@@ -312,6 +312,7 @@ class StoryEngine:
         phase_tool_names = {
             "intent": [
                 "get_world_scene",
+                "get_world_story",
                 "get_world_location",
                 "list_world_locations",
                 "list_world_entities",
@@ -323,9 +324,13 @@ class StoryEngine:
                 "list_scene_entities",
                 "get_entity_state",
                 "retrieve_memory_tool",
+                "roll_dice",
+                "skill_check",
+                "get_recent_skill_checks",
             ],
             "mechanics": [
                 "get_world_scene",
+                "get_world_story",
                 "get_world_location",
                 "list_world_locations",
                 "list_world_entities",
@@ -342,6 +347,7 @@ class StoryEngine:
                 "skill_check",
                 "get_recent_skill_checks",
                 "move_to_location",
+                "move_npc",
             ],
         }
 
@@ -417,14 +423,21 @@ class StoryEngine:
             return result
 
         def pre_tool_use(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+            _ = arguments
             phase_name = str(turn_ctx.get("phase", "")).strip().lower()
-            allowed = set(phase_tool_names.get(phase_name, []))
-            if tool_name not in allowed:
-                return {"allow": False, "reason": f"{tool_name} is not available in {phase_name or 'current'} phase."}
+            if tool_name not in world_tools_by_name:
+                return {"allow": False, "reason": f"Unknown tool '{tool_name}'."}
 
-            if phase_name == "mechanics" and tool_name in world_tools_by_name:
-                if not turn_ctx["todo"]:
-                    return {"allow": False, "reason": "No todo plan exists. Read and execute the planned todo list first."}
+            if phase_name == "intent":
+                intent_blocked_tools = {"move_to_location", "move_npc", "write_memory_tool"}
+                if tool_name in intent_blocked_tools:
+                    return {"allow": False, "reason": f"{tool_name} is deferred to mechanics phase."}
+
+            allowed = set(phase_tool_names.get(phase_name, []))
+            if allowed and tool_name not in allowed:
+                # Soften phase gating: allow known tools outside preferred list
+                # so the loop can recover from imperfect tool selection.
+                return {"allow": True}
 
             return {"allow": True}
 
@@ -435,13 +448,22 @@ class StoryEngine:
                 success = payload.get("success", True)
             if success:
                 return None
-            return "Tool call failed. Re-evaluate the step, then either try a different grounded tool call or finish with what is known."
+            error_text = str(payload.get("error") or payload.get("reason") or "").lower()
+            if "unknown tool" in error_text:
+                return f"Unknown tool `{tool_name}`. Use one of the provided tools."
+            return None
 
         def phase_response_hook(assistant_text: str, tool_calls: Sequence[Dict[str, Any]], _iteration: int) -> Optional[str]:
-            if not str(assistant_text or "").strip():
-                return "Every response must include a short `Decision Summary:` line."
-            if not _extract_labeled_line(assistant_text, "Decision Summary"):
+            has_tool_calls = len(tool_calls) > 0
+            text = str(assistant_text or "").strip()
+            if not text and has_tool_calls:
+                # Allow tool-only turns. Some models emit an empty assistant text
+                # when they decide to call a tool immediately.
+                return None
+            if text and not _extract_labeled_line(text, "Decision Summary"):
                 return "Every response must begin with `Decision Summary: ...`."
+            if not text and not has_tool_calls:
+                return "Every non-tool response must include a short `Decision Summary:` line."
             if len(tool_calls) > 1:
                 return "Use at most one tool call per response."
             return None

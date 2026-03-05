@@ -11,6 +11,102 @@ from .tool_runtime import get_runtime_world_model, save_runtime_world_checkpoint
 from .world_model import WORLD_MODEL_DATA_DIR, WorldModel, build_world_model
 
 
+def _normalize_text(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _first_location_key(model: WorldModel) -> str:
+    if not model.locations:
+        return ""
+    return sorted(model.locations.values(), key=lambda value: value.key.lower())[0].key
+
+
+def _resolve_location_candidate(model: WorldModel, location_key: str) -> str:
+    candidate = str(location_key or "").strip()
+    if not candidate:
+        return ""
+    location = model.get_location(candidate)
+    if location is not None:
+        return location.key
+
+    needle = _normalize_text(candidate)
+    for location_value in model.locations.values():
+        if needle in _normalize_text(location_value.key) or needle in _normalize_text(location_value.name):
+            return location_value.key
+    return ""
+
+
+def _resolve_entity_candidate(model: WorldModel, entity_key: str) -> str:
+    candidate = str(entity_key or "").strip()
+    if not candidate:
+        return ""
+    entity = model.get_entity(candidate)
+    if entity is not None:
+        return entity.key
+
+    needle = _normalize_text(candidate)
+    for entity_value in model.entities.values():
+        if needle in _normalize_text(entity_value.key) or needle in _normalize_text(entity_value.name):
+            return entity_value.key
+    return ""
+
+
+def _resolve_item_candidate(model: WorldModel, item_key: str) -> str:
+    candidate = str(item_key or "").strip()
+    if not candidate:
+        return ""
+    item = model.get_item(candidate)
+    if item is not None:
+        return item.key
+
+    needle = _normalize_text(candidate)
+    for item_value in model.items.values():
+        if needle in _normalize_text(item_value.key) or needle in _normalize_text(item_value.name):
+            return item_value.key
+    return ""
+
+
+def _default_scene_location(model: WorldModel, game_state: GameState | None) -> str:
+    if game_state is not None and str(game_state.player_location or "").strip():
+        resolved = _resolve_location_candidate(model, game_state.player_location)
+        if resolved:
+            return resolved
+    if model.starting_location:
+        resolved = _resolve_location_candidate(model, model.starting_location)
+        if resolved:
+            return resolved
+    return _first_location_key(model)
+
+
+def _default_scene_entity(model: WorldModel, game_state: GameState | None) -> str:
+    player = model.get_entity("Player")
+    if player is not None:
+        return player.key
+    location_key = _default_scene_location(model, game_state)
+    if location_key:
+        actors = model.scene_snapshot(location_key).get("actors_here", [])
+        for actor_key in actors:
+            resolved = _resolve_entity_candidate(model, str(actor_key))
+            if resolved:
+                return resolved
+    if model.entities:
+        return sorted(model.entities.values(), key=lambda value: value.key.lower())[0].key
+    return ""
+
+
+def _default_scene_item(model: WorldModel, game_state: GameState | None) -> str:
+    location_key = _default_scene_location(model, game_state)
+    if location_key:
+        scene_items = model.scene_snapshot(location_key).get("items_here", [])
+        for item_key in scene_items:
+            resolved = _resolve_item_candidate(model, str(item_key))
+            if resolved:
+                return resolved
+    if model.items:
+        return sorted(model.items.values(), key=lambda value: value.key.lower())[0].key
+    return ""
+
+
 def _resolve_data_dir(world_model_data_dir: str = "") -> Path:
     if str(world_model_data_dir or "").strip():
         return Path(str(world_model_data_dir)).expanduser().resolve()
@@ -75,15 +171,18 @@ def list_world_locations(world_model_data_dir: str = "", game_state: GameState |
 
 
 def get_world_location(
-    location_key: str,
+    location_key: str = "",
     world_model_data_dir: str = "",
     game_state: GameState | None = None,
 ) -> dict[str, Any]:
     model = _load_model(world_model_data_dir, game_state=game_state)
-    location = model.get_location(location_key)
+    resolved_key = _resolve_location_candidate(model, location_key) or _default_scene_location(model, game_state)
+    if not resolved_key:
+        return {"success": True, "location": None, "reason": "No locations are available in the world model."}
+    location = model.get_location(resolved_key)
     if location is None:
         return {"success": False, "reason": f"Unknown location '{location_key}'."}
-    return {"success": True, "location": location.to_record()}
+    return {"success": True, "location": location.to_record(), "resolved_location_key": resolved_key}
 
 
 def upsert_world_location(
@@ -147,12 +246,15 @@ def connect_world_locations(
 
 
 def get_world_scene(
-    location_key: str,
+    location_key: str = "",
     world_model_data_dir: str = "",
     game_state: GameState | None = None,
 ) -> dict[str, Any]:
     model = _load_model(world_model_data_dir, game_state=game_state)
-    return {"success": True, "scene": model.scene_snapshot(location_key)}
+    resolved_key = _resolve_location_candidate(model, location_key) or _default_scene_location(model, game_state)
+    if not resolved_key:
+        return {"success": True, "scene": {"location": "", "description": "Unknown location", "connections": [], "actors_here": [], "items_here": []}}
+    return {"success": True, "scene": model.scene_snapshot(resolved_key), "resolved_location_key": resolved_key}
 
 
 def list_world_entities(
@@ -165,15 +267,18 @@ def list_world_entities(
 
 
 def get_world_entity(
-    entity_key: str,
+    entity_key: str = "",
     world_model_data_dir: str = "",
     game_state: GameState | None = None,
 ) -> dict[str, Any]:
     model = _load_model(world_model_data_dir, game_state=game_state)
-    entity = model.get_entity(entity_key)
+    resolved_key = _resolve_entity_candidate(model, entity_key) or _default_scene_entity(model, game_state)
+    if not resolved_key:
+        return {"success": True, "entity": None, "inventory": [], "reason": "No entities are available in the world model."}
+    entity = model.get_entity(resolved_key)
     if entity is None:
         return {"success": False, "reason": f"Unknown entity '{entity_key}'."}
-    return {"success": True, "entity": entity.to_record(), "inventory": list(entity.inventory)}
+    return {"success": True, "entity": entity.to_record(), "inventory": list(entity.inventory), "resolved_entity_key": resolved_key}
 
 
 def upsert_world_entity(
@@ -258,15 +363,18 @@ def list_world_items(
 
 
 def get_world_item(
-    item_key: str,
+    item_key: str = "",
     world_model_data_dir: str = "",
     game_state: GameState | None = None,
 ) -> dict[str, Any]:
     model = _load_model(world_model_data_dir, game_state=game_state)
-    item = model.get_item(item_key)
+    resolved_key = _resolve_item_candidate(model, item_key) or _default_scene_item(model, game_state)
+    if not resolved_key:
+        return {"success": True, "item": None, "reason": "No items are available in the world model."}
+    item = model.get_item(resolved_key)
     if item is None:
         return {"success": False, "reason": f"Unknown item '{item_key}'."}
-    return {"success": True, "item": item.to_record()}
+    return {"success": True, "item": item.to_record(), "resolved_item_key": resolved_key}
 
 
 def upsert_world_item(
@@ -391,7 +499,7 @@ WORLD_MODEL_TOOL_DEFINITIONS = [
                     "location_key": {"type": "string"},
                     "world_model_data_dir": {"type": "string"},
                 },
-                "required": ["location_key"],
+                "required": [],
             },
         },
     },
@@ -444,7 +552,7 @@ WORLD_MODEL_TOOL_DEFINITIONS = [
                     "location_key": {"type": "string"},
                     "world_model_data_dir": {"type": "string"},
                 },
-                "required": ["location_key"],
+                "required": [],
             },
         },
     },
@@ -474,7 +582,7 @@ WORLD_MODEL_TOOL_DEFINITIONS = [
                     "entity_key": {"type": "string"},
                     "world_model_data_dir": {"type": "string"},
                 },
-                "required": ["entity_key"],
+                "required": [],
             },
         },
     },
@@ -546,7 +654,7 @@ WORLD_MODEL_TOOL_DEFINITIONS = [
                     "item_key": {"type": "string"},
                     "world_model_data_dir": {"type": "string"},
                 },
-                "required": ["item_key"],
+                "required": [],
             },
         },
     },

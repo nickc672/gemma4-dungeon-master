@@ -39,9 +39,9 @@ def roll_dice(
 
 
 def skill_check(
-    entity_key: str,
-    skill: str,
-    dc: int,
+    entity_key: str = "Player",
+    skill: str = "perception",
+    dc: int = 10,
     context: str = "",
     top_memory: int = 0,
     _manual_roll: int | None = None,
@@ -50,14 +50,19 @@ def skill_check(
     if game_state is None:
         return {"success": False, "reason": "Missing game_state context."}
 
-    entity = find_entity(entity_key, game_state)
+    resolved_entity = str(entity_key or "").strip() or "Player"
+    entity = find_entity(resolved_entity, game_state)
+    if entity is None:
+        entity = find_entity("Player", game_state)
     if entity is None:
         return {"success": False, "reason": f"Entity '{entity_key}' not found."}
 
-    skill_key = normalize_key(skill).replace(" ", "_")
-    target_dc = int(dc)
-    if target_dc < 1 or target_dc > 40:
-        return {"success": False, "reason": "dc must be between 1 and 40."}
+    skill_key = normalize_key(skill or "perception").replace(" ", "_") or "perception"
+    try:
+        target_dc = int(dc)
+    except Exception:
+        target_dc = 10
+    target_dc = max(1, min(40, target_dc))
 
     skill_modifier = entity.get_skill(skill_key)
     stat_key = SKILL_TO_STAT.get(skill_key)
@@ -88,8 +93,13 @@ def skill_check(
     total = int(roll_payload["total"])
     success = total >= target_dc
     memory_hits: list[dict[str, Any]] = []
-    if int(top_memory) > 0 and str(context or "").strip():
-        hits = entity.search_memory(str(context), top_n=max(1, int(top_memory)))
+    memory_limit = 0
+    try:
+        memory_limit = max(0, int(top_memory))
+    except Exception:
+        memory_limit = 0
+    if memory_limit > 0 and str(context or "").strip():
+        hits = entity.search_memory(str(context), top_n=max(1, memory_limit))
         memory_hits = [{"sentence": hit.sentence, "score": float(hit.score)} for hit in hits]
 
     entry = {
@@ -156,7 +166,7 @@ MECHANICS_TOOL_DEFINITIONS = [
                     "context": {"type": "string", "description": "Optional situational context for the check."},
                     "top_memory": {"type": "integer", "minimum": 0, "maximum": 10},
                 },
-                "required": ["entity_key", "skill", "dc"],
+                "required": [],
             },
         },
     },

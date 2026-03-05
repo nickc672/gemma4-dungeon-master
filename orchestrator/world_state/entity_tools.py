@@ -5,7 +5,7 @@ from .tool_runtime import DynamicSentenceMemory, entity_public_view, find_entity
 
 
 def get_entity_state(
-    entity_key: str,
+    entity_key: str = "Player",
     include_memory_preview: bool = False,
     memory_preview: int = 3,
     game_state: GameState | None = None,
@@ -13,7 +13,8 @@ def get_entity_state(
     if game_state is None:
         return {"success": False, "reason": "Missing game_state context."}
 
-    entity = find_entity(entity_key, game_state)
+    resolved_entity = str(entity_key or "").strip() or "Player"
+    entity = find_entity(resolved_entity, game_state)
     if entity is None:
         return {"success": False, "reason": f"Entity '{entity_key}' not found."}
 
@@ -28,23 +29,34 @@ def get_entity_state(
 
 
 def retrieve_memory_tool(
-    entity_name: str,
-    context: str,
+    entity_name: str = "Player",
+    context: str = "",
     top_n: int = 4,
     game_state: GameState | None = None,
 ) -> dict[str, object]:
     if game_state is None:
         return {"success": False, "message": "Missing game_state context.", "memories": []}
 
-    entity = find_entity(entity_name, game_state)
+    resolved_entity = str(entity_name or "").strip() or "Player"
+    entity = find_entity(resolved_entity, game_state)
     if entity is None:
         return {
             "success": False,
-            "message": f"Entity '{entity_name}' is not registered.",
+            "message": f"Entity '{resolved_entity}' is not registered.",
             "memories": [],
         }
 
-    hits = entity.search_memory(context, top_n=max(1, int(top_n)))
+    query = str(context or "").strip()
+    if not query:
+        return {
+            "success": True,
+            "entity_name": entity.name,
+            "memory_backend": DynamicSentenceMemory.backend_status(),
+            "memories": [],
+            "message": "No context provided for memory retrieval.",
+        }
+
+    hits = entity.search_memory(query, top_n=max(1, int(top_n)))
     return {
         "success": True,
         "entity_name": entity.name,
@@ -54,7 +66,7 @@ def retrieve_memory_tool(
 
 
 def write_memory_tool(
-    entity_name: str,
+    entity_name: str = "Player",
     memory: str = "",
     relevance: float = 100.0,
     context: str = "",
@@ -63,16 +75,22 @@ def write_memory_tool(
     if game_state is None:
         return {"success": False, "message": "Missing game_state context."}
 
-    entity = find_entity(entity_name, game_state)
+    resolved_entity = str(entity_name or "").strip() or "Player"
+    entity = find_entity(resolved_entity, game_state)
     if entity is None:
         return {
             "success": False,
-            "message": f"Entity '{entity_name}' is not registered.",
+            "message": f"Entity '{resolved_entity}' is not registered.",
         }
 
     text = str(memory or context or "").strip()
     if not text:
-        return {"success": False, "message": "memory/context cannot be empty."}
+        return {
+            "success": True,
+            "entity_name": entity.name,
+            "message": "No memory text provided; skipped write.",
+            "memory_count": entity.memory_count,
+        }
 
     entity.add_memory(text)
     return {
@@ -97,7 +115,7 @@ ENTITY_TOOL_DEFINITIONS = [
                     "include_memory_preview": {"type": "boolean"},
                     "memory_preview": {"type": "integer", "minimum": 0, "maximum": 20},
                 },
-                "required": ["entity_key"],
+                "required": [],
             },
         },
     },
@@ -113,7 +131,7 @@ ENTITY_TOOL_DEFINITIONS = [
                     "context": {"type": "string", "description": "Query context for similarity search."},
                     "top_n": {"type": "integer", "minimum": 1, "maximum": 20},
                 },
-                "required": ["entity_name", "context"],
+                "required": [],
             },
         },
     },
@@ -130,7 +148,7 @@ ENTITY_TOOL_DEFINITIONS = [
                     "context": {"type": "string", "description": "Alias for memory (notebook compatibility)."},
                     "relevance": {"type": "number", "minimum": 0, "maximum": 1000},
                 },
-                "required": ["entity_name"],
+                "required": [],
             },
         },
     },
