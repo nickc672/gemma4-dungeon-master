@@ -5,29 +5,68 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import streamlit as st
+import streamlit.components.v1 as components
 
-from orchestrator.app_config import get_ollama_default_model
+from orchestrator.app_config import get_ollama_default_model, get_ollama_model_choices, get_roll_mode
 from orchestrator.runtime_flow.pipeline import StoryEngine
 from orchestrator.world_state.world_model import build_world_model
 
 ###
 PLAYER_BG_PATH = Path("UI-Assets/town-square.jpg")
 APP_BG_PATH = Path("UI-Assets/FantasyPort.jpg")
+FANTASTIC_DICE_URL = "https://fantasticdice.games/"
+DICE_COMPONENT_DIR = Path(__file__).resolve().parent / "components" / "fantastic_dice_component"
+FANTASTIC_DICE_COMPONENT = components.declare_component(
+    "fantastic_dice_component",
+    path=str(DICE_COMPONENT_DIR),
+)
+ROLL_REQUIRED_SENTINEL = "__DMC_ROLL_REQUIRED__"
+ROLL_REQUIRED_MESSAGE = (
+    "A dice roll is required before I can resolve that action. "
+    "Click Roll the Dice to continue."
+)
 
 
 def _default_world_model():
     return build_world_model()
 
 
-def _config_signature(model: str, starting_location: str, starting_state: str) -> str:
-    return f"{model}|{starting_location}|{starting_state}"
+def _config_signature(model: str, starting_location: str, starting_state: str, roll_mode: str) -> str:
+    return f"{model}|{starting_location}|{starting_state}|{roll_mode}"
 
 
-def _initialize_session(model: str, starting_location: str, starting_state: str) -> None:
+def _activate_roll_request() -> None:
+    seq = int(st.session_state.get("roll_request_seq", 0))
+    seq += 1
+    st.session_state.roll_request_seq = seq
+    st.session_state.roll_request_id = f"roll-{seq}"
+    st.session_state.awaiting_manual_roll = True
+    st.session_state.captured_manual_roll = None
+
+
+def _streamlit_manual_roll_provider(_request: Dict[str, Any]) -> int:
+    latched_roll = st.session_state.get("latched_manual_roll")
+    if latched_roll is not None:
+        return int(latched_roll)
+    pending_roll = st.session_state.get("captured_manual_roll")
+    if pending_roll is None:
+        _activate_roll_request()
+        raise RuntimeError(ROLL_REQUIRED_SENTINEL)
+    value = int(pending_roll)
+    st.session_state.captured_manual_roll = None
+    st.session_state.latched_manual_roll = value
+    st.session_state.awaiting_manual_roll = False
+    st.session_state.roll_request_id = ""
+    return value
+
+
+def _initialize_session(model: str, starting_location: str, starting_state: str, roll_mode: str) -> None:
     engine = StoryEngine(
         model=model,
         starting_location=starting_location,
         starting_state=starting_state,
+        roll_mode=roll_mode,
+        manual_roll_provider=_streamlit_manual_roll_provider if roll_mode == "manual" else None,
     )
     messages: List[Dict[str, str]] = []
     intro_text = starting_state
@@ -42,11 +81,69 @@ def _initialize_session(model: str, starting_location: str, starting_state: str)
     st.session_state.orchestrator = engine
     st.session_state.messages = messages
     st.session_state.last_turn = {}
-    st.session_state.config_sig = _config_signature(model, starting_location, starting_state)
+    st.session_state.pending_player_input = None
+    st.session_state.captured_manual_roll = None
+    st.session_state.awaiting_manual_roll = False
+    st.session_state.last_roll_event_id = ""
+    st.session_state.roll_request_id = ""
+    st.session_state.roll_request_seq = 0
+    st.session_state.completed_roll_request_id = ""
+    st.session_state.latched_manual_roll = None
+    st.session_state.config_sig = _config_signature(model, starting_location, starting_state, roll_mode)
 
 
 def _get_story_engine() -> StoryEngine:
     return st.session_state.orchestrator
+
+
+def _append_assistant_message_once(text: str) -> None:
+    messages = st.session_state.get("messages", [])
+    if messages and messages[-1].get("role") == "assistant" and messages[-1].get("content") == text:
+        return
+    messages.append({"role": "assistant", "content": text})
+    st.session_state.messages = messages
+
+
+def _capture_roll_from_component(payload: Any) -> int | None:
+    if not st.session_state.get("pending_player_input"):
+        return None
+    if st.session_state.get("captured_manual_roll") is not None:
+        return None
+    if st.session_state.get("latched_manual_roll") is not None:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    roll_id = str(payload.get("roll_id") or "").strip()
+    if not roll_id:
+        return None
+    if roll_id == st.session_state.get("last_roll_event_id"):
+        return None
+    current_request_id = str(st.session_state.get("roll_request_id") or "").strip()
+    payload_request_id = str(payload.get("request_id") or "").strip()
+    if current_request_id and payload_request_id and payload_request_id != current_request_id:
+        return None
+    effective_request_id = payload_request_id or current_request_id
+    if (
+        effective_request_id
+        and effective_request_id == str(st.session_state.get("completed_roll_request_id") or "").strip()
+    ):
+        return None
+
+    raw_value = payload.get("d20")
+    try:
+        roll_value = int(raw_value)
+    except (TypeError, ValueError):
+        return None
+    if roll_value < 1 or roll_value > 20:
+        return None
+
+    st.session_state.captured_manual_roll = roll_value
+    st.session_state.last_roll_event_id = roll_id
+    st.session_state.awaiting_manual_roll = False
+    st.session_state.roll_request_id = ""
+    if effective_request_id:
+        st.session_state.completed_roll_request_id = effective_request_id
+    return roll_value
 
 
 def _inject_player_background(image_path: Path) -> None:
@@ -106,6 +203,67 @@ def _inject_player_background(image_path: Path) -> None:
             background: rgba(8, 10, 14, 0.55);
             border-radius: 12px;
             padding: 0.15rem 0.85rem;
+          }}
+
+          .dice-roller-shell {{
+            margin-top: 0.8rem;
+            margin-bottom: 0.5rem;
+            border-radius: 14px;
+            border: 1px solid rgba(237, 228, 211, 0.2);
+            background: rgba(7, 10, 14, 0.72);
+            padding: 0.75rem 0.9rem;
+            transition: box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+          }}
+
+          .dice-roller-shell.active {{
+            border-color: rgba(252, 199, 62, 0.78);
+            box-shadow: 0 0 0 1px rgba(252, 199, 62, 0.35), 0 0 22px rgba(252, 199, 62, 0.52);
+            animation: dice-pulse 1.2s ease-in-out infinite alternate;
+          }}
+
+          .dice-roller-shell.inactive {{
+            opacity: 0.78;
+          }}
+
+          .dice-roller-header {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.85rem;
+          }}
+
+          .dice-token {{
+            width: 2.2rem;
+            height: 2.2rem;
+            border-radius: 8px;
+            border: 1px solid rgba(230, 221, 201, 0.4);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.82rem;
+            letter-spacing: 0.03em;
+            color: #f3efe6;
+            background: linear-gradient(140deg, rgba(65, 45, 17, 0.85), rgba(18, 15, 9, 0.9));
+            box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.55);
+          }}
+
+          .dice-roller-title {{
+            margin: 0;
+            color: #f3efe6;
+            font-size: 0.98rem;
+            line-height: 1.2;
+          }}
+
+          .dice-roller-note {{
+            margin-top: 0.4rem;
+            color: rgba(243, 239, 230, 0.78);
+            font-size: 0.84rem;
+          }}
+
+          @keyframes dice-pulse {{
+            from {{ box-shadow: 0 0 0 1px rgba(252, 199, 62, 0.35), 0 0 14px rgba(252, 199, 62, 0.38); }}
+            to {{ box-shadow: 0 0 0 1px rgba(252, 199, 62, 0.45), 0 0 28px rgba(252, 199, 62, 0.66); }}
           }}
 
           div[data-testid="stVerticalBlock"]:has(#character-image-anchor) {{
@@ -264,9 +422,15 @@ def main() -> None:
 
     with st.sidebar:
         st.header("Session")
-        model = st.text_input(
+        model_choices = get_ollama_model_choices()
+        session_model = st.session_state.get("model_input", get_ollama_default_model())
+        if session_model not in model_choices:
+            model_choices = [session_model, *model_choices]
+        selected_model_index = model_choices.index(session_model)
+        model = st.selectbox(
             "Ollama model",
-            value=st.session_state.get("model_input", get_ollama_default_model()),
+            options=model_choices,
+            index=selected_model_index,
             key="model_input",
         ) or ""
 
@@ -286,18 +450,57 @@ def main() -> None:
         start_new = st.button("Start new session")
         show_status = st.checkbox("Show story status", value=True)
         show_debug = st.checkbox("Show debug info", value=False)
+        default_roll_mode = get_roll_mode()
+        roll_mode = st.selectbox(
+            "Roll resolution",
+            options=["auto", "manual"],
+            index=0 if st.session_state.get("roll_mode_input", default_roll_mode) == "auto" else 1,
+            key="roll_mode_input",
+        )
+        st.caption("`manual` waits for a player 1d20 roll from the Roll the Dice panel.")
 
-    sig = _config_signature(model, starting_location, starting_state)
+    sig = _config_signature(model, starting_location, starting_state, roll_mode)
 
     if "orchestrator" not in st.session_state:
-        _initialize_session(model, starting_location, starting_state)
+        _initialize_session(model, starting_location, starting_state, roll_mode)
     elif start_new or st.session_state.get("config_sig") != sig:
-        _initialize_session(model, starting_location, starting_state)
+        _initialize_session(model, starting_location, starting_state, roll_mode)
 
     _inject_player_background(PLAYER_BG_PATH)
     _inject_app_background(APP_BG_PATH)
 
     engine = _get_story_engine()
+    try:
+        engine.adapter.verbose = bool(show_debug)
+    except Exception:
+        pass
+
+    # Guard against stale UI state across reruns/reloads.
+    if "completed_roll_request_id" not in st.session_state:
+        st.session_state.completed_roll_request_id = ""
+    if "latched_manual_roll" not in st.session_state:
+        st.session_state.latched_manual_roll = None
+    if roll_mode != "manual":
+        st.session_state.awaiting_manual_roll = False
+        st.session_state.pending_player_input = None
+        st.session_state.captured_manual_roll = None
+        st.session_state.roll_request_id = ""
+        st.session_state.latched_manual_roll = None
+    elif st.session_state.get("awaiting_manual_roll", False) and not st.session_state.get("pending_player_input"):
+        st.session_state.awaiting_manual_roll = False
+        st.session_state.captured_manual_roll = None
+        st.session_state.roll_request_id = ""
+        st.session_state.latched_manual_roll = None
+    elif (
+        st.session_state.get("pending_player_input")
+        and len(st.session_state.get("messages", [])) <= 1
+    ):
+        # Fresh/intro-only sessions must never start in a waiting-for-roll state.
+        st.session_state.awaiting_manual_roll = False
+        st.session_state.pending_player_input = None
+        st.session_state.captured_manual_roll = None
+        st.session_state.roll_request_id = ""
+        st.session_state.latched_manual_roll = None
 
     play_tab, dm_tab = st.tabs(["Player View", "DM Tools"])
 
@@ -313,6 +516,51 @@ def main() -> None:
                     with st.chat_message(message["role"]):
                         st.markdown(message["content"])
 
+            roll_requested = bool(
+                roll_mode == "manual"
+                and st.session_state.get("awaiting_manual_roll", False)
+                and st.session_state.get("pending_player_input")
+                and st.session_state.get("captured_manual_roll") is None
+                and st.session_state.get("latched_manual_roll") is None
+            )
+            st.session_state.roll_requested = roll_requested
+            component_payload = FANTASTIC_DICE_COMPONENT(
+                active=bool(roll_requested),
+                notation="1d20",
+                request_id=str(st.session_state.get("roll_request_id") or ""),
+                key="fantastic_dice_component",
+                default=None,
+            )
+            _capture_roll_from_component(component_payload)
+
+            pending_input = st.session_state.get("pending_player_input")
+            captured_roll = st.session_state.get("captured_manual_roll")
+            if pending_input and captured_roll is not None:
+                with st.spinner("Applying dice roll..."):
+                    try:
+                        turn = engine.run_turn(str(pending_input))
+                        response = turn["narration"]["ic"]
+                        st.session_state.last_turn = turn
+                        st.session_state.awaiting_manual_roll = False
+                        st.session_state.pending_player_input = None
+                        st.session_state.captured_manual_roll = None
+                        st.session_state.roll_request_id = ""
+                        st.session_state.latched_manual_roll = None
+                        st.session_state.messages.append({"role": "assistant", "content": response})
+                    except Exception as exc:
+                        message = str(exc)
+                        if ROLL_REQUIRED_SENTINEL in message:
+                            _activate_roll_request()
+                            _append_assistant_message_once(ROLL_REQUIRED_MESSAGE)
+                        else:
+                            st.session_state.pending_player_input = None
+                            st.session_state.captured_manual_roll = None
+                            st.session_state.roll_request_id = ""
+                            st.session_state.latched_manual_roll = None
+                            _append_assistant_message_once("The Dungeon Master is unavailable right now.")
+                            st.error(f"Failed to generate a response: {exc}")
+                st.rerun()
+
             with st.form("chat_form", clear_on_submit=True):
                 player_input = st.text_area(
                     "Describe what your character does...",
@@ -322,15 +570,36 @@ def main() -> None:
                 submitted = st.form_submit_button("Send")
 
             if submitted and player_input.strip():
+                if roll_mode == "manual" and roll_requested:
+                    _append_assistant_message_once("A roll is still pending. Waiting for the 1d20 result.")
+                    st.rerun()
+
                 st.session_state.messages.append({"role": "user", "content": player_input})
+
+                if roll_mode == "manual":
+                    st.session_state.pending_player_input = player_input
+                    st.session_state.latched_manual_roll = None
                 with st.spinner("The Dungeon Master is thinking..."):
                     try:
                         turn = engine.run_turn(player_input)
                         response = turn["narration"]["ic"]
                         st.session_state.last_turn = turn
+                        st.session_state.awaiting_manual_roll = False
+                        st.session_state.pending_player_input = None
+                        st.session_state.captured_manual_roll = None
+                        st.session_state.roll_request_id = ""
+                        st.session_state.latched_manual_roll = None
                     except Exception as exc:
-                        response = "The Dungeon Master is unavailable right now."
-                        st.error(f"Failed to generate a response: {exc}")
+                        message = str(exc)
+                        if ROLL_REQUIRED_SENTINEL in message:
+                            _activate_roll_request()
+                            response = ROLL_REQUIRED_MESSAGE
+                        else:
+                            st.session_state.pending_player_input = None
+                            st.session_state.roll_request_id = ""
+                            st.session_state.latched_manual_roll = None
+                            response = "The Dungeon Master is unavailable right now."
+                            st.error(f"Failed to generate a response: {exc}")
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 st.rerun()
 
@@ -405,13 +674,11 @@ def main() -> None:
             st.markdown("No world-state data yet.")
 
         if show_debug:
-            debug_data = st.session_state.get("last_turn", {}).get("llm_debug")
+            last_turn = st.session_state.get("last_turn", {}) or {}
+            debug_data = last_turn.get("llm_trace") or last_turn.get("llm_debug")
             with st.expander("Debug", expanded=False):
                 if debug_data:
-                    for step, payload in debug_data.items():
-                        st.markdown(f"**{step}**")
-                        st.text_area(f"{step} prompt", value=payload.get("prompt", ""), height=120)
-                        st.text_area(f"{step} raw", value=payload.get("raw", ""), height=120)
+                    st.json(debug_data, expanded=False)
                 else:
                     st.markdown("No debug info available yet.")
 
