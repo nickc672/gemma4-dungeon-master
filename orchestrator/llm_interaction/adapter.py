@@ -9,6 +9,7 @@ import ollama
 from ollama import ResponseError
 
 logger = logging.getLogger(__name__)
+DMC_ROLL_REQUIRED_SENTINEL = "__DMC_ROLL_REQUIRED__"
 
 
 class LLMError(RuntimeError):
@@ -528,6 +529,11 @@ class LLMAdapter:
                         else:
                             tool_payload = {"ok": True, "result": copy.deepcopy(tool_result)}
                     except Exception as exc:
+                        # Manual roll mode in the Streamlit UI signals "wait for player roll"
+                        # by raising a sentinel runtime error from the tool executor.
+                        # This must escape the tool loop so the UI can render the dice component.
+                        if DMC_ROLL_REQUIRED_SENTINEL in str(exc):
+                            raise
                         tool_payload = {"ok": False, "error": str(exc)}
 
                 tool_entry = {

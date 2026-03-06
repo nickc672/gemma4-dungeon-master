@@ -405,7 +405,7 @@ class StoryEngine:
                 manual_roll_supported = True
             elif tool_name == "roll_dice":
                 try:
-                    manual_roll_supported = int(args.get("sides", 20)) == 20 and int(args.get("count", 1)) == 1
+                    manual_roll_supported = int(args.get("count", 1)) == 1
                 except (TypeError, ValueError):
                     manual_roll_supported = False
 
@@ -494,10 +494,19 @@ class StoryEngine:
                 return "Every non-tool response must include a short `Decision Summary:` line."
             if len(tool_calls) > 1:
                 return "Use at most one tool call per response."
+            # Some models emit valid tool-only turns with empty assistant text.
+            # Allow that, otherwise tool execution is blocked and loops can stall.
+            text = str(assistant_text or "").strip()
+            if not text:
+                if tool_calls:
+                    return None
+                return "Every response must include a short `Decision Summary:` line."
+            if not _extract_labeled_line(text, "Decision Summary"):
+                return "Every response must begin with `Decision Summary: ...`."
             if (
                 str(turn_ctx.get("phase", "")).strip().lower() == "mechanics"
                 and not tool_calls
-                and _mentions_unresolved_roll_request(assistant_text)
+                and _mentions_unresolved_roll_request(text)
             ):
                 return "If a roll/check is needed, call `skill_check` in mechanics. Do not defer player rolls to narration."
             return None

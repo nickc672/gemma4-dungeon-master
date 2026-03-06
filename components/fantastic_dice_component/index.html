@@ -150,18 +150,43 @@
             .catch(() => {});
         }
 
-        function extractFirstDie(groups) {
-          if (!Array.isArray(groups)) {
-            return null;
+        function asInt(value) {
+          if (Number.isInteger(value)) {
+            return value;
           }
+          if (typeof value === "string" && value.trim()) {
+            const parsed = Number.parseInt(value, 10);
+            if (Number.isInteger(parsed)) {
+              return parsed;
+            }
+          }
+          if (typeof value === "number" && Number.isFinite(value)) {
+            const rounded = Math.round(value);
+            if (Math.abs(value - rounded) < 1e-9) {
+              return rounded;
+            }
+          }
+          return null;
+        }
+
+        function extractFirstDie(result) {
+          const groups = Array.isArray(result) ? result : (result && Array.isArray(result.rolls) ? result.rolls : []);
           for (const group of groups) {
             const rolls = Array.isArray(group && group.rolls) ? group.rolls : [];
             for (const die of rolls) {
-              const value = die && (die.value ?? die.result);
-              if (Number.isInteger(value)) {
+              const value = asInt(die && (die.value ?? die.result));
+              if (value != null) {
                 return value;
               }
             }
+            const groupValue = asInt(group && (group.value ?? group.total ?? group.result));
+            if (groupValue != null) {
+              return groupValue;
+            }
+          }
+          const topLevel = asInt(result && (result.value ?? result.total ?? result.result));
+          if (topLevel != null) {
+            return topLevel;
           }
           return null;
         }
@@ -211,6 +236,8 @@
               Streamlit.setComponentValue({
                 roll_id: Date.now().toString() + "-" + Math.random().toString(16).slice(2),
                 request_id: state.requestId || "",
+                notation: state.notation || "1d20",
+                roll_value: d20,
                 d20: d20,
               });
             }

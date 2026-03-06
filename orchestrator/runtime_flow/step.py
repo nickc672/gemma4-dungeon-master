@@ -235,6 +235,36 @@ def validate_narration_step(sections: Dict[str, str]) -> None:
     if re.search(r"\b1\)", narrative) or re.search(r"\b2\)", narrative):
         raise ValueError("Narrative contains numbered choices. Do not offer explicit choices to the player.")
 
+    # Narration must never defer checks/rolls back to the player.
+    lower = narrative.lower()
+    asks_for_roll = (
+        re.search(r"\broll\b", lower)
+        or re.search(r"\b(check|skill check|perception check|investigation check|dc)\b", lower)
+    )
+    defers_for_roll = (
+        re.search(r"\b(i('| a)?ll need|i will need|need|before i can|provide|give me|make)\b", lower)
+        and asks_for_roll
+    ) or re.search(r"\broll\s+(a|an|your)\b", lower)
+    if defers_for_roll:
+        raise ValueError(
+            "Narrative asked the player to roll/check. Do not request rolls in narration; use resolved mechanics only."
+        )
+
+    # Also reject asking for stat bonus/modifier input in narration.
+    asks_for_modifier = (
+        re.search(r"\b(bonus|modifier)\b", lower)
+        and re.search(r"\b(what|tell me|let me know|provide|give)\b", lower)
+    )
+    dm_roll_language = re.search(
+        r"\b(i\s+(roll|rolled|will roll|can roll)|let me roll|so i can roll)\b",
+        lower,
+    )
+    if asks_for_modifier or dm_roll_language:
+        raise ValueError(
+            "Narrative requested bonus/modifier input or attempted DM-side rolling text. "
+            "Resolve checks in mechanics tools instead."
+        )
+
 __all__ = [
     "LLMStep",
     "parse_intent",

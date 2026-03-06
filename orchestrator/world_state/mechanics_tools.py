@@ -26,11 +26,11 @@ def roll_dice(
         return {"success": False, "reason": "count must be between 1 and 20."}
 
     if _manual_roll is not None:
-        if sides != 20 or count != 1:
-            return {"success": False, "reason": "manual roll override only supports 1d20."}
+        if count != 1:
+            return {"success": False, "reason": "manual roll override only supports single-die rolls."}
         roll_value = int(_manual_roll)
-        if roll_value < 1 or roll_value > 20:
-            return {"success": False, "reason": "manual d20 roll must be between 1 and 20."}
+        if roll_value < 1 or roll_value > sides:
+            return {"success": False, "reason": f"manual roll must be between 1 and {sides}."}
         rolls = [roll_value]
     else:
         rolls = [random.randint(1, sides) for _ in range(count)]

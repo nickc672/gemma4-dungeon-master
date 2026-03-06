@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -31,32 +32,92 @@ def _default_world_model():
     return build_world_model()
 
 
+def _get_installed_ollama_models() -> list[str]:
+    try:
+        result = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+
+    models: list[str] = []
+    for line in result.stdout.splitlines():
+        row = line.strip()
+        if not row or row.startswith("NAME"):
+            continue
+        model = row.split()[0].strip()
+        if model and model not in models:
+            models.append(model)
+    return models
+
+
 def _config_signature(model: str, starting_location: str, starting_state: str, roll_mode: str) -> str:
     return f"{model}|{starting_location}|{starting_state}|{roll_mode}"
 
 
-def _activate_roll_request() -> None:
+def _resolve_manual_roll_notation(request: Dict[str, Any] | None) -> str:
+    payload = dict(request or {})
+    tool_name = str(payload.get("tool_name") or "").strip()
+    args = dict(payload.get("arguments") or {})
+    if tool_name == "roll_dice":
+        try:
+            sides = int(args.get("sides", 20))
+            count = int(args.get("count", 1))
+        except (TypeError, ValueError):
+            return "1d20"
+        return f"{count}d{sides}"
+    return "1d20"
+
+
+def _resolve_manual_roll_max_face(request: Dict[str, Any] | None) -> int:
+    payload = dict(request or {})
+    tool_name = str(payload.get("tool_name") or "").strip()
+    args = dict(payload.get("arguments") or {})
+    if tool_name == "roll_dice":
+        try:
+            sides = int(args.get("sides", 20))
+        except (TypeError, ValueError):
+            return 20
+        return max(2, min(1000, sides))
+    # skill_check and fallback behavior are d20-based.
+    return 20
+
+
+def _activate_roll_request(request: Dict[str, Any] | None = None) -> None:
     seq = int(st.session_state.get("roll_request_seq", 0))
     seq += 1
     st.session_state.roll_request_seq = seq
     st.session_state.roll_request_id = f"roll-{seq}"
+    st.session_state.roll_request_tool = str((request or {}).get("tool_name") or "").strip()
+    st.session_state.roll_notation = _resolve_manual_roll_notation(request)
+    st.session_state.roll_max_face = _resolve_manual_roll_max_face(request)
     st.session_state.awaiting_manual_roll = True
     st.session_state.captured_manual_roll = None
 
 
-def _streamlit_manual_roll_provider(_request: Dict[str, Any]) -> int:
+def _streamlit_manual_roll_provider(request: Dict[str, Any]) -> int:
     latched_roll = st.session_state.get("latched_manual_roll")
     if latched_roll is not None:
         return int(latched_roll)
     pending_roll = st.session_state.get("captured_manual_roll")
     if pending_roll is None:
-        _activate_roll_request()
+        _activate_roll_request(request)
         raise RuntimeError(ROLL_REQUIRED_SENTINEL)
     value = int(pending_roll)
     st.session_state.captured_manual_roll = None
     st.session_state.latched_manual_roll = value
     st.session_state.awaiting_manual_roll = False
     st.session_state.roll_request_id = ""
+    st.session_state.roll_request_tool = ""
+    st.session_state.roll_notation = "1d20"
+    st.session_state.roll_max_face = 20
     return value
 
 
@@ -87,6 +148,9 @@ def _initialize_session(model: str, starting_location: str, starting_state: str,
     st.session_state.last_roll_event_id = ""
     st.session_state.roll_request_id = ""
     st.session_state.roll_request_seq = 0
+    st.session_state.roll_request_tool = ""
+    st.session_state.roll_notation = "1d20"
+    st.session_state.roll_max_face = 20
     st.session_state.completed_roll_request_id = ""
     st.session_state.latched_manual_roll = None
     st.session_state.config_sig = _config_signature(model, starting_location, starting_state, roll_mode)
@@ -114,8 +178,6 @@ def _capture_roll_from_component(payload: Any) -> int | None:
     if not isinstance(payload, dict):
         return None
     roll_id = str(payload.get("roll_id") or "").strip()
-    if not roll_id:
-        return None
     if roll_id == st.session_state.get("last_roll_event_id"):
         return None
     current_request_id = str(st.session_state.get("roll_request_id") or "").strip()
@@ -129,18 +191,28 @@ def _capture_roll_from_component(payload: Any) -> int | None:
     ):
         return None
 
-    raw_value = payload.get("d20")
+    raw_value = payload.get("roll_value", payload.get("d20"))
+    if raw_value is None and isinstance(payload.get("die"), dict):
+        die_payload = payload.get("die") or {}
+        raw_value = die_payload.get("value", die_payload.get("result"))
     try:
         roll_value = int(raw_value)
     except (TypeError, ValueError):
         return None
-    if roll_value < 1 or roll_value > 20:
+    max_face = int(st.session_state.get("roll_max_face", 20) or 20)
+    if roll_value < 1 or roll_value > max_face:
         return None
+
+    if not roll_id:
+        roll_id = f"{effective_request_id or 'roll'}:{roll_value}"
 
     st.session_state.captured_manual_roll = roll_value
     st.session_state.last_roll_event_id = roll_id
     st.session_state.awaiting_manual_roll = False
     st.session_state.roll_request_id = ""
+    st.session_state.roll_request_tool = ""
+    st.session_state.roll_notation = "1d20"
+    st.session_state.roll_max_face = 20
     if effective_request_id:
         st.session_state.completed_roll_request_id = effective_request_id
     return roll_value
@@ -423,6 +495,9 @@ def main() -> None:
     with st.sidebar:
         st.header("Session")
         model_choices = get_ollama_model_choices()
+        for installed_model in _get_installed_ollama_models():
+            if installed_model not in model_choices:
+                model_choices.append(installed_model)
         session_model = st.session_state.get("model_input", get_ollama_default_model())
         if session_model not in model_choices:
             model_choices = [session_model, *model_choices]
@@ -480,16 +555,28 @@ def main() -> None:
         st.session_state.completed_roll_request_id = ""
     if "latched_manual_roll" not in st.session_state:
         st.session_state.latched_manual_roll = None
+    if "roll_request_tool" not in st.session_state:
+        st.session_state.roll_request_tool = ""
+    if "roll_notation" not in st.session_state:
+        st.session_state.roll_notation = "1d20"
+    if "roll_max_face" not in st.session_state:
+        st.session_state.roll_max_face = 20
     if roll_mode != "manual":
         st.session_state.awaiting_manual_roll = False
         st.session_state.pending_player_input = None
         st.session_state.captured_manual_roll = None
         st.session_state.roll_request_id = ""
+        st.session_state.roll_request_tool = ""
+        st.session_state.roll_notation = "1d20"
+        st.session_state.roll_max_face = 20
         st.session_state.latched_manual_roll = None
     elif st.session_state.get("awaiting_manual_roll", False) and not st.session_state.get("pending_player_input"):
         st.session_state.awaiting_manual_roll = False
         st.session_state.captured_manual_roll = None
         st.session_state.roll_request_id = ""
+        st.session_state.roll_request_tool = ""
+        st.session_state.roll_notation = "1d20"
+        st.session_state.roll_max_face = 20
         st.session_state.latched_manual_roll = None
     elif (
         st.session_state.get("pending_player_input")
@@ -500,6 +587,9 @@ def main() -> None:
         st.session_state.pending_player_input = None
         st.session_state.captured_manual_roll = None
         st.session_state.roll_request_id = ""
+        st.session_state.roll_request_tool = ""
+        st.session_state.roll_notation = "1d20"
+        st.session_state.roll_max_face = 20
         st.session_state.latched_manual_roll = None
 
     play_tab, dm_tab = st.tabs(["Player View", "DM Tools"])
@@ -526,7 +616,7 @@ def main() -> None:
             st.session_state.roll_requested = roll_requested
             component_payload = FANTASTIC_DICE_COMPONENT(
                 active=bool(roll_requested),
-                notation="1d20",
+                notation=str(st.session_state.get("roll_notation") or "1d20"),
                 request_id=str(st.session_state.get("roll_request_id") or ""),
                 key="fantastic_dice_component",
                 default=None,
@@ -545,17 +635,22 @@ def main() -> None:
                         st.session_state.pending_player_input = None
                         st.session_state.captured_manual_roll = None
                         st.session_state.roll_request_id = ""
+                        st.session_state.roll_request_tool = ""
+                        st.session_state.roll_notation = "1d20"
+                        st.session_state.roll_max_face = 20
                         st.session_state.latched_manual_roll = None
                         st.session_state.messages.append({"role": "assistant", "content": response})
                     except Exception as exc:
                         message = str(exc)
                         if ROLL_REQUIRED_SENTINEL in message:
-                            _activate_roll_request()
                             _append_assistant_message_once(ROLL_REQUIRED_MESSAGE)
                         else:
                             st.session_state.pending_player_input = None
                             st.session_state.captured_manual_roll = None
                             st.session_state.roll_request_id = ""
+                            st.session_state.roll_request_tool = ""
+                            st.session_state.roll_notation = "1d20"
+                            st.session_state.roll_max_face = 20
                             st.session_state.latched_manual_roll = None
                             _append_assistant_message_once("The Dungeon Master is unavailable right now.")
                             st.error(f"Failed to generate a response: {exc}")
@@ -571,7 +666,10 @@ def main() -> None:
 
             if submitted and player_input.strip():
                 if roll_mode == "manual" and roll_requested:
-                    _append_assistant_message_once("A roll is still pending. Waiting for the 1d20 result.")
+                    pending_notation = str(st.session_state.get("roll_notation") or "1d20")
+                    _append_assistant_message_once(
+                        f"A roll is still pending. Waiting for the {pending_notation} result."
+                    )
                     st.rerun()
 
                 st.session_state.messages.append({"role": "user", "content": player_input})
@@ -588,15 +686,20 @@ def main() -> None:
                         st.session_state.pending_player_input = None
                         st.session_state.captured_manual_roll = None
                         st.session_state.roll_request_id = ""
+                        st.session_state.roll_request_tool = ""
+                        st.session_state.roll_notation = "1d20"
+                        st.session_state.roll_max_face = 20
                         st.session_state.latched_manual_roll = None
                     except Exception as exc:
                         message = str(exc)
                         if ROLL_REQUIRED_SENTINEL in message:
-                            _activate_roll_request()
                             response = ROLL_REQUIRED_MESSAGE
                         else:
                             st.session_state.pending_player_input = None
                             st.session_state.roll_request_id = ""
+                            st.session_state.roll_request_tool = ""
+                            st.session_state.roll_notation = "1d20"
+                            st.session_state.roll_max_face = 20
                             st.session_state.latched_manual_roll = None
                             response = "The Dungeon Master is unavailable right now."
                             st.error(f"Failed to generate a response: {exc}")
