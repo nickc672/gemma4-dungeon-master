@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import random
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
@@ -26,6 +27,16 @@ ROLL_REQUIRED_MESSAGE = (
     "A dice roll is required before I can resolve that action. "
     "Click Roll the Dice to continue."
 )
+ROLL_THEME_COLORS = [
+    "#C84C32",
+    "#2E86AB",
+    "#3FA34D",
+    "#7A4CC2",
+    "#D9A404",
+    "#C13C8A",
+    "#2F4858",
+    "#C96F2D",
+]
 
 
 def _default_world_model():
@@ -100,6 +111,9 @@ def _activate_roll_request(request: Dict[str, Any] | None = None) -> None:
     st.session_state.roll_max_face = _resolve_manual_roll_max_face(request)
     st.session_state.awaiting_manual_roll = True
     st.session_state.captured_manual_roll = None
+    st.session_state.dice_board_visible = False
+    st.session_state.dice_roll_nonce = 0
+    st.session_state.dice_theme_color = ""
 
 
 def _streamlit_manual_roll_provider(request: Dict[str, Any]) -> int:
@@ -153,6 +167,9 @@ def _initialize_session(model: str, starting_location: str, starting_state: str,
     st.session_state.roll_max_face = 20
     st.session_state.completed_roll_request_id = ""
     st.session_state.latched_manual_roll = None
+    st.session_state.dice_board_visible = False
+    st.session_state.dice_roll_nonce = 0
+    st.session_state.dice_theme_color = ""
     st.session_state.config_sig = _config_signature(model, starting_location, starting_state, roll_mode)
 
 
@@ -295,6 +312,18 @@ def _inject_player_background(image_path: Path) -> None:
 
           .dice-roller-shell.inactive {{
             opacity: 0.78;
+          }}
+
+          .manual-roll-cta {{
+            display: flex;
+            justify-content: center;
+            margin: 0.9rem 0 0.75rem;
+          }}
+
+          .manual-roll-cta button {{
+            min-width: min(100%, 320px);
+            width: min(100%, 320px);
+            font-weight: 700;
           }}
 
           .dice-roller-header {{
@@ -561,6 +590,12 @@ def main() -> None:
         st.session_state.roll_notation = "1d20"
     if "roll_max_face" not in st.session_state:
         st.session_state.roll_max_face = 20
+    if "dice_board_visible" not in st.session_state:
+        st.session_state.dice_board_visible = False
+    if "dice_roll_nonce" not in st.session_state:
+        st.session_state.dice_roll_nonce = 0
+    if "dice_theme_color" not in st.session_state:
+        st.session_state.dice_theme_color = ""
     if roll_mode != "manual":
         st.session_state.awaiting_manual_roll = False
         st.session_state.pending_player_input = None
@@ -570,6 +605,9 @@ def main() -> None:
         st.session_state.roll_notation = "1d20"
         st.session_state.roll_max_face = 20
         st.session_state.latched_manual_roll = None
+        st.session_state.dice_board_visible = False
+        st.session_state.dice_roll_nonce = 0
+        st.session_state.dice_theme_color = ""
     elif st.session_state.get("awaiting_manual_roll", False) and not st.session_state.get("pending_player_input"):
         st.session_state.awaiting_manual_roll = False
         st.session_state.captured_manual_roll = None
@@ -578,6 +616,9 @@ def main() -> None:
         st.session_state.roll_notation = "1d20"
         st.session_state.roll_max_face = 20
         st.session_state.latched_manual_roll = None
+        st.session_state.dice_board_visible = False
+        st.session_state.dice_roll_nonce = 0
+        st.session_state.dice_theme_color = ""
     elif (
         st.session_state.get("pending_player_input")
         and len(st.session_state.get("messages", [])) <= 1
@@ -591,6 +632,9 @@ def main() -> None:
         st.session_state.roll_notation = "1d20"
         st.session_state.roll_max_face = 20
         st.session_state.latched_manual_roll = None
+        st.session_state.dice_board_visible = False
+        st.session_state.dice_roll_nonce = 0
+        st.session_state.dice_theme_color = ""
 
     play_tab, dm_tab = st.tabs(["Player View", "DM Tools"])
 
@@ -614,14 +658,26 @@ def main() -> None:
                 and st.session_state.get("latched_manual_roll") is None
             )
             st.session_state.roll_requested = roll_requested
-            component_payload = FANTASTIC_DICE_COMPONENT(
-                active=bool(roll_requested),
-                notation=str(st.session_state.get("roll_notation") or "1d20"),
-                request_id=str(st.session_state.get("roll_request_id") or ""),
-                key="fantastic_dice_component",
-                default=None,
-            )
-            _capture_roll_from_component(component_payload)
+            if roll_requested:
+                _, roll_button_col, _ = st.columns([1, 2.2, 1])
+                with roll_button_col:
+                    roll_clicked = st.button("Roll the Dice", key="manual_roll_trigger", use_container_width=True)
+                if roll_clicked:
+                    st.session_state.dice_board_visible = True
+                    st.session_state.dice_roll_nonce = int(st.session_state.get("dice_roll_nonce", 0)) + 1
+                    st.session_state.dice_theme_color = random.choice(ROLL_THEME_COLORS)
+
+            if roll_requested and st.session_state.get("dice_board_visible", False):
+                component_payload = FANTASTIC_DICE_COMPONENT(
+                    active=True,
+                    notation=str(st.session_state.get("roll_notation") or "1d20"),
+                    request_id=str(st.session_state.get("roll_request_id") or ""),
+                    roll_nonce=int(st.session_state.get("dice_roll_nonce", 0)),
+                    theme_color=str(st.session_state.get("dice_theme_color") or ""),
+                    key="fantastic_dice_component",
+                    default=None,
+                )
+                _capture_roll_from_component(component_payload)
 
             pending_input = st.session_state.get("pending_player_input")
             captured_roll = st.session_state.get("captured_manual_roll")
@@ -639,6 +695,8 @@ def main() -> None:
                         st.session_state.roll_notation = "1d20"
                         st.session_state.roll_max_face = 20
                         st.session_state.latched_manual_roll = None
+                        st.session_state.dice_board_visible = False
+                        st.session_state.dice_theme_color = ""
                         st.session_state.messages.append({"role": "assistant", "content": response})
                     except Exception as exc:
                         message = str(exc)
@@ -652,6 +710,8 @@ def main() -> None:
                             st.session_state.roll_notation = "1d20"
                             st.session_state.roll_max_face = 20
                             st.session_state.latched_manual_roll = None
+                            st.session_state.dice_board_visible = False
+                            st.session_state.dice_theme_color = ""
                             _append_assistant_message_once("The Dungeon Master is unavailable right now.")
                             st.error(f"Failed to generate a response: {exc}")
                 st.rerun()
@@ -690,6 +750,8 @@ def main() -> None:
                         st.session_state.roll_notation = "1d20"
                         st.session_state.roll_max_face = 20
                         st.session_state.latched_manual_roll = None
+                        st.session_state.dice_board_visible = False
+                        st.session_state.dice_theme_color = ""
                     except Exception as exc:
                         message = str(exc)
                         if ROLL_REQUIRED_SENTINEL in message:
@@ -701,6 +763,8 @@ def main() -> None:
                             st.session_state.roll_notation = "1d20"
                             st.session_state.roll_max_face = 20
                             st.session_state.latched_manual_roll = None
+                            st.session_state.dice_board_visible = False
+                            st.session_state.dice_theme_color = ""
                             response = "The Dungeon Master is unavailable right now."
                             st.error(f"Failed to generate a response: {exc}")
                 st.session_state.messages.append({"role": "assistant", "content": response})

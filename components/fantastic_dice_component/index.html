@@ -24,11 +24,7 @@
       }
 
       .controls {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 8px;
-        margin-bottom: 6px;
+        display: none;
       }
 
       button {
@@ -121,6 +117,8 @@
           rolling: false,
           requestId: "",
           completedRequestId: "",
+          rollNonce: 0,
+          themeColor: "",
         };
         let diceBoxPromise = null;
 
@@ -226,7 +224,11 @@
           updateUi();
           try {
             const box = await getDiceBox();
-            const rollResult = await box.roll(state.notation || "1d20");
+            const rollOptions = {};
+            if (state.themeColor) {
+              rollOptions.themeColor = state.themeColor;
+            }
+            const rollResult = await box.roll(state.notation || "1d20", rollOptions);
             const d20 = extractFirstDie(rollResult);
             if (!Number.isInteger(d20)) {
               throw new Error("Could not read die result.");
@@ -253,6 +255,8 @@
           state.active = Boolean(args.active);
           state.notation = typeof args.notation === "string" && args.notation.trim() ? args.notation.trim() : "1d20";
           state.requestId = typeof args.request_id === "string" ? args.request_id.trim() : "";
+          state.themeColor = typeof args.theme_color === "string" ? args.theme_color.trim() : "";
+          const nextRollNonce = Number.isFinite(Number(args.roll_nonce)) ? Number(args.roll_nonce) : 0;
           if (!state.active) {
             state.completedRequestId = "";
             clearExistingDiceScene();
@@ -260,7 +264,16 @@
             state.completedRequestId = "";
             clearExistingDiceScene();
           }
+          const shouldAutoRoll =
+            state.active &&
+            Boolean(state.requestId) &&
+            nextRollNonce > state.rollNonce &&
+            state.completedRequestId !== state.requestId;
+          state.rollNonce = nextRollNonce;
           updateUi();
+          if (shouldAutoRoll) {
+            void handleRollClick();
+          }
         }
 
         rollBtn.addEventListener("click", handleRollClick);
