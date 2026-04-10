@@ -1,0 +1,250 @@
+{
+  "Town Square": {
+    "id": "L001",
+    "type": "location"
+  },
+  "Market Stalls": {
+    "id": "L002",
+    "type": "location"
+  },
+  "Temple of the Tide": {
+    "id": "L003",
+    "type": "location"
+  },
+  "Town Hall": {
+    "id": "L004",
+    "type": "location"
+  },
+  "Harbor Gate": {
+    "id": "L005",
+    "type": "location"
+  },
+  "Docks": {
+    "id": "L006",
+    "type": "location"
+  },
+  "Warehouse Row": {
+    "id": "L007",
+    "type": "location"
+  },
+  "Smuggler's Entrance": {
+    "id": "L008",
+    "type": "location"
+  },
+  "Old Well": {
+    "id": "L009",
+    "type": "location"
+  },
+  "Watch Barracks": {
+    "id": "L010",
+    "type": "location"
+  },
+  "East Alley": {
+    "id": "L011",
+    "type": "location"
+  },
+  "Back Door - Copper Cup": {
+    "id": "L012",
+    "type": "location"
+  },
+  "Old Shrine": {
+    "id": "L013",
+    "type": "location"
+  },
+  "South Bridge": {
+    "id": "L014",
+    "type": "location"
+  },
+  "Riverside Path": {
+    "id": "L015",
+    "type": "location"
+  },
+  "Fishermen's Shacks": {
+    "id": "L016",
+    "type": "location"
+  },
+  "Lumberyard": {
+    "id": "L017",
+    "type": "location"
+  },
+  "Wizard's House": {
+    "id": "L018",
+    "type": "location"
+  },
+  "Copper Cup": {
+    "id": "L019",
+    "type": "location"
+  },
+  "Bar Counter": {
+    "id": "L020",
+    "type": "location"
+  },
+  "Stair Landing": {
+    "id": "L021",
+    "type": "location"
+  },
+  "Storeroom Door": {
+    "id": "L022",
+    "type": "location"
+  },
+  "Town Crier Jessa": {
+    "id": "P001",
+    "type": "npc"
+  },
+  "Street Performer Jorin": {
+    "id": "P002",
+    "type": "npc"
+  },
+  "Fishmonger Talo": {
+    "id": "P003",
+    "type": "npc"
+  },
+  "Spice Seller Nima": {
+    "id": "P004",
+    "type": "npc"
+  },
+  "Cleric Serah": {
+    "id": "P005",
+    "type": "npc"
+  },
+  "Novice Arel": {
+    "id": "P006",
+    "type": "npc"
+  },
+  "Mitch": {
+    "id": "P007",
+    "type": "npc"
+  },
+  "Mayor Elric": {
+    "id": "P008",
+    "type": "npc"
+  },
+  "Scribe Loth": {
+    "id": "P009",
+    "type": "npc"
+  },
+  "Gate Guard Ren": {
+    "id": "P010",
+    "type": "npc"
+  },
+  "Dockmaster Hara": {
+    "id": "P011",
+    "type": "npc"
+  },
+  "Deckhand Finn": {
+    "id": "P012",
+    "type": "npc"
+  },
+  "Foreman Kesh": {
+    "id": "P013",
+    "type": "npc"
+  },
+  "Smuggler Lia": {
+    "id": "P014",
+    "type": "npc"
+  },
+  "Old Tellan": {
+    "id": "P015",
+    "type": "npc"
+  },
+  "Captain Varr": {
+    "id": "P016",
+    "type": "npc"
+  },
+  "Street Urchin Pip": {
+    "id": "P017",
+    "type": "npc"
+  },
+  "Fence Caris": {
+    "id": "P018",
+    "type": "npc"
+  },
+  "Cook Brenna": {
+    "id": "P019",
+    "type": "npc"
+  },
+  "Caretaker Ilya": {
+    "id": "P020",
+    "type": "npc"
+  },
+  "Bridge Watcher Sol": {
+    "id": "P021",
+    "type": "npc"
+  },
+  "Boatman Jaro": {
+    "id": "P022",
+    "type": "npc"
+  },
+  "Fisher Rian": {
+    "id": "P023",
+    "type": "npc"
+  },
+  "Fisher Mira": {
+    "id": "P024",
+    "type": "npc"
+  },
+  "Town Wizard Arlen": {
+    "id": "P025",
+    "type": "npc"
+  },
+  "Mara": {
+    "id": "P026",
+    "type": "npc"
+  },
+  "Brin": {
+    "id": "P027",
+    "type": "npc"
+  },
+  "Edda": {
+    "id": "P028",
+    "type": "npc"
+  },
+  "Thom": {
+    "id": "P029",
+    "type": "npc"
+  },
+  "Lysa": {
+    "id": "P030",
+    "type": "npc"
+  },
+  "Bronze Fountain Coin": {
+    "id": "I001",
+    "type": "item"
+  },
+  "Salt-Stained Prayer Beads": {
+    "id": "I002",
+    "type": "item"
+  },
+  "Weathered Notice": {
+    "id": "C001",
+    "type": "clue"
+  },
+  "Cracked Spyglass": {
+    "id": "I004",
+    "type": "item"
+  },
+  "Frayed Mooring Rope": {
+    "id": "C002",
+    "type": "clue"
+  },
+  "Smugglers' Ledger": {
+    "id": "C003",
+    "type": "clue"
+  },
+  "Guard's Lost Signet": {
+    "id": "I007",
+    "type": "item"
+  },
+  "Hidden Alley Knife": {
+    "id": "I008",
+    "type": "item"
+  },
+  "Carved Driftwood Charm": {
+    "id": "I009",
+    "type": "item"
+  },
+  "Hidden Scrap": {
+    "id": "C004",
+    "type": "clue"
+  }
+}

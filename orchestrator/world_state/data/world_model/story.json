@@ -1,0 +1,13 @@
+{
+  "starting_location": "Town Square",
+  "starting_state": "Dusk settles over the harbor town as lanterns flare alive around the cobbles of Town Square. People move with the same exhausted, hollow-eyed rhythm, repeating the same rumors: bloodstains in homes, missing hours, and mornings full of dread with no clear memory of what happened overnight. Some blame the reclusive wizard behind the iron fence, while others whisper that the town itself is cursed. You arrived to verify the rumors, but now you are standing inside them.",
+  "beat_list": [
+    "Establish the town's mood at dusk in Town Square: fear, fatigue, and rumors of bloodstains without missing bodies.",
+    "Introduce Mitch as the first urgent hook. He asks for help and insists the wizard is involved, but his testimony is inconsistent.",
+    "Let the player investigate freely across civic, dockside, temple, and tavern locations to gather concrete clues and witness accounts.",
+    "Surface contradictions: missing-time reports, cleaned crime scenes, and records that imply someone is repeatedly resetting events.",
+    "Bring the player to a direct confrontation where both Mitch and the wizard can be questioned with evidence in hand.",
+    "Reveal the core truth: Mitch commits killings in a dissociative cycle and the wizard has been erasing/repairing memories to prevent wider panic.",
+    "Resolve by player choice: side with Mitch, side with the wizard, broker a difficult compromise, or pursue an independent solution."
+  ]
+}

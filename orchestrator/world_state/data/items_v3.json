@@ -1,0 +1,39 @@
+{
+  "version": 3,
+  "meta": {
+    "created_ts": "2026-02-12T23:19:00.721287-05:00",
+    "notes": "Items only. IDs preserved from v2 for compatibility."
+  },
+  "items": {
+    "I001": {
+      "name": "Bronze Fountain Coin",
+      "desc_zh": "铜币残旧，嵌于喷泉石缝之间；久经水磨、人手摩挲，纹面几近磨平，唯余淡淡刻痕，似古老城徽，耐人寻味。",
+      "desc_en": "A battered bronze coin wedged between the stones of the central fountain. Its face is worn smooth by years of water and fingertips, but faint engraving hints at an older crest."
+    },
+    "I002": {
+      "name": "Salt-Stained Prayer Beads",
+      "desc_zh": "木珠圆润，系成一串；贴湿袍处盐霜点点、晶华附着，数珠细刻浪纹，若潮声在耳，令人不寒而栗。",
+      "desc_en": "A loop of smooth wooden beads, crusted with a thin line of salt where they rest against wet robes. Some of the beads are carved with tiny wave symbols."
+    },
+    "I004": {
+      "name": "Cracked Spyglass",
+      "desc_zh": "黄铜望远镜昔日精巧，今镜片细裂如发；近嗅咸腥油气扑鼻，筒身微刻纹与镇徽相类之纹，来历不凡。",
+      "desc_en": "A once-fine brass spyglass with a hairline crack across one lens. It smells faintly of salt and oil and bears tiny etchings matching the town's crest."
+    },
+    "I007": {
+      "name": "Guard's Lost Signet",
+      "desc_zh": "银质印戒刻镇徽，擦痕累累，仿佛曾被石上拖曳；观其新旧，似方才遗落，蛛丝马迹尽在其间。",
+      "desc_en": "A small silver signet ring bearing the town's crest, scuffed as though it has been dragged along stone. It looks recently dropped."
+    },
+    "I008": {
+      "name": "Hidden Alley Knife",
+      "desc_zh": "窄刃匕首藏于松砖之后，低伏膝下；柄缠旧蓝布，刃缘隐见锈痕点染，寒光不露却杀机暗伏。",
+      "desc_en": "A narrow-bladed knife tucked behind a loose brick at knee height. Its handle is wrapped in worn blue cloth, and a faint rust stain darkens the edge."
+    },
+    "I009": {
+      "name": "Carved Driftwood Charm",
+      "desc_zh": "浅色漂木雕作卷浪之形，以褪蓝绳系悬；近闻微有香烟与海盐之气，祭祀余韵未散。",
+      "desc_en": "A piece of pale driftwood carved into the shape of a curling wave, hung on a faded blue cord. It smells faintly of incense and sea-salt."
+    }
+  }
+}

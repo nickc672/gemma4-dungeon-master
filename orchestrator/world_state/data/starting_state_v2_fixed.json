@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "meta": {
+    "created_ts": "2026-02-12T22:51:53.728875-05:00",
+    "notes": "STARTING_STATE with EN+ZH (ZH is literary; key info preserved)."
+  },
+  "starting_state_en": "Dusk settles over the harbor town as you stand in the middle of its cobbled square. Lanterns flicker to life one by one, and the people moving between the Temple of the Tide, the town hall, and the Copper Cup all wear the same drawn, sleepless look. In hushed tones they talk about bloodstains found in houses all over town, nights they cannot remember, and the town wizard who never seems to leave his guarded home.You've heard strange rumors about this town, about murderous stains with no missing bodies.",
+  "starting_state_zh": "暮色四合，你立于港镇石铺广场之中。华灯初上，潮汐圣殿、市政厅与铜杯酒馆之间，人影往来皆面容憔悴、夜不成寐。众人低语：民宅屡现血迹，众夜梦断、记忆成空；那位闭门不出的镇中法师，更添疑云。你早闻此地怪谈：血案无痕，死不见尸。"
+}

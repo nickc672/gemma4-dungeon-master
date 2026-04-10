@@ -1,0 +1,498 @@
+{
+  "L001": {
+    "name": "Town Square",
+    "source_key": "Town Square",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "The cobbled heart of the harbor town. Lanterns hang from iron posts, a weathered fountain burbles at the center, and every major street spills into this crossroads of exhausted townsfolk, shouting vendors, and passing sailors. Talk of bloodstains and lost sleep hangs under every conversation.",
+    "desc_zh": "鹅卵石铺就的港镇广场，灯笼摇曳、喷泉潺潺，是人群与流言交汇的十字路口。"
+  },
+  "L002": {
+    "name": "Market Stalls",
+    "source_key": "Market Stalls",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A ring of canvas-topped stalls crowd the edge of the square. Fishmongers, spice sellers, and tinkers hawk their wares while children weave between crates and baskets.",
+    "desc_zh": "广场边缘布棚成环，商贩云集、叫卖喧阗；鱼鲜香料陈列其间，孩童穿梭如织。"
+  },
+  "L003": {
+    "name": "Temple of the Tide",
+    "source_key": "Temple of the Tide",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A modest stone temple overlooking the square, its doors carved with waves and storm-clouds. Inside, candles flicker before a statue of a calm, watchful sea goddess. Many townsfolk come here seeking answers for the nights they cannot remember.",
+    "desc_zh": "俯瞰广场的石砌小庙，门扉刻着浪与云；烛光映照海之女神像，失忆之夜的疑问在此回响。"
+  },
+  "L004": {
+    "name": "Town Hall",
+    "source_key": "Town Hall",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A tall, timber-framed hall with a slate roof and creaking signboard. Notices are nailed to a board outside, and a pair of clerks shuffle papers just inside the main doors. The notice board is cluttered with reports of nocturnal disturbances and 'unsettling stains' found in private homes.",
+    "desc_zh": "木梁高耸的市政厅，门口告示板钉满夜间异动与“诡异血迹”的报告，文书往来不停。"
+  },
+  "L005": {
+    "name": "Harbor Gate",
+    "source_key": "Harbor Gate",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "An archway of weathered stone opening toward the piers. Guard posts on either side watch the flow of carts and sailors between the town and the docks.",
+    "desc_zh": "通往码头的风化石拱门，两侧岗哨监视车马与水手的进出。"
+  },
+  "L006": {
+    "name": "Docks",
+    "source_key": "Docks",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "Wooden piers stretch out over dark water, crowded with fishing boats and the occasional merchant ship. Ropes creak, gulls wheel overhead, and the smell of tar and brine hangs thick in the air.",
+    "desc_zh": "木栈延海，渔船商舶往返不绝；绳索作响、海鸥盘旋，柏油与咸风交织。"
+  },
+  "L007": {
+    "name": "Warehouse Row",
+    "source_key": "Warehouse Row",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A line of squat stone warehouses hugs the waterfront. Their heavy doors and barred windows suggest both valuable cargo and things better kept out of sight. One doorframe bears a faded, rusty smear that no one can quite explain.",
+    "desc_zh": "滨岸石仓林立，重门铁窗、讳莫如深；门框上残留难以解释的锈红污痕。"
+  },
+  "L008": {
+    "name": "Smuggler's Entrance",
+    "source_key": "Smuggler's Entrance",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A half-concealed grate and narrow stone steps leading below the warehouses. The smell of damp and old river-mud clings to the air here.",
+    "desc_zh": "仓下暗格半掩，石阶曲折通幽；潮湿泥腥挥之不去。"
+  },
+  "L009": {
+    "name": "Old Well",
+    "source_key": "Old Well",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "An old stone well at the edge of the square, its rope replaced more than once. Locals say its water never runs dry, and that it connects to forgotten tunnels beneath the town. Faint rust-brown stains cling to some of the stones as though someone once washed something away here.",
+    "desc_zh": "古井傍市，传言通往地下旧道；井石带锈，如曾洗去不可言之物。"
+  },
+  "L010": {
+    "name": "Watch Barracks",
+    "source_key": "Watch Barracks",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A sturdy building flying the town's colors. Racks of spears stand by the door, and off-duty guards swap stories on the steps when the weather is mild.",
+    "desc_zh": "守军营房旗帜高悬，枪架森然；卫士闲谈间亦闻风声鹤唳。"
+  },
+  "L011": {
+    "name": "East Alley",
+    "source_key": "East Alley",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A narrow, shadowed alley slipping between tall buildings. Laundry lines crisscross overhead, and the back doors of several shops and taverns open onto it. Here and there, someone has scrubbed at dark stains that refuse to fully fade from the cobbles.",
+    "desc_zh": "狭巷幽暗，衣绳纵横，店铺酒馆后门相连；暗斑被反复刷洗仍难褪尽。"
+  },
+  "L012": {
+    "name": "Back Door - Copper Cup",
+    "source_key": "Back Door - Copper Cup",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A plain wooden door at the rear of the Copper Cup, used by staff and late-night regulars. Crates and empty barrels stack nearby, and the smell of stew drifts out when it opens. A faint dark streak runs along one stone, as if something was once dragged past in a hurry.",
+    "desc_zh": "铜杯酒馆的朴素后门，常供伙计与夜客出入；箱桶堆叠，门开时炖汤香溢出，地石有被拖拽的暗痕。"
+  },
+  "L013": {
+    "name": "Old Shrine",
+    "source_key": "Old Shrine",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A crumbling wayside shrine tucked into a bend of the alley, its carvings worn by sea-wind and salt. Offerings of shells and coins gather in a shallow stone bowl.",
+    "desc_zh": "残祠藏于巷角，海风侵蚀；贝壳钱币为供，香火未绝。"
+  },
+  "L014": {
+    "name": "South Bridge",
+    "source_key": "South Bridge",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A low stone bridge arching over a narrow river that feeds the harbor. Lanterns line the parapet, and you can see both the town walls and the distant open sea from its center. More than one passerby has reported waking here with aching feet and no memory of how they arrived.",
+    "desc_zh": "石桥横河，灯列如星；桥心可望城墙与远海，有人梦醒于此，却不记来路。"
+  },
+  "L015": {
+    "name": "Riverside Path",
+    "source_key": "Riverside Path",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A muddy path following the riverbank toward the outskirts. Reeds whisper in the breeze, and shallow boats are pulled up onto the shore.",
+    "desc_zh": "沿河通往郊外的泥泞小径，芦苇随风低语，浅舟被拖上岸边。"
+  },
+  "L016": {
+    "name": "Fishermen's Shacks",
+    "source_key": "Fishermen's Shacks",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A cluster of small wooden shacks perched on pilings above the river. Nets hang to dry, and lantern-light spills from half-open doors late into the night. In more than one doorway, dark stains mar the floorboards with no memory of how they appeared.",
+    "desc_zh": "河上木棚，渔网晾晒、灯火微明；多处门槛地板有来历不明的暗斑。"
+  },
+  "L017": {
+    "name": "Lumberyard",
+    "source_key": "Lumberyard",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "Stacks of freshly cut logs and the tang of sap fill the air. A small shack nearby shows scuffed floorboards and a corner where someone scrubbed at dried, dark stains.",
+    "desc_zh": "木料场新料堆积、松脂扑鼻；旁边小屋地板磨损，角落有被刷洗过的干涸暗迹。"
+  },
+  "L018": {
+    "name": "Wizard's House",
+    "source_key": "Wizard's House",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A tall stone house with shuttered windows and a heavy iron fence, set just off the square. Lanterns burn late behind the curtains, and a pair of hired guards discourage casual callers.",
+    "desc_zh": "高墙铁篱之宅，门窗紧闭，帘后灯火长明；雇佣守卫拒绝闲人靠近。"
+  },
+  "L019": {
+    "name": "Copper Cup",
+    "source_key": "Copper Cup",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A low-beamed harbor tavern. Lanterns swing above crowded tables, and the air smells of stew, sea-salt, and woodsmoke. The barkeep Mara watches everything from behind the counter.",
+    "desc_zh": "海港酒馆“铜杯”，梁低而人声鼎沸，灯笼摇曳；酒香海味交杂；老板娘玛拉在吧台后洞察一切。"
+  },
+  "L020": {
+    "name": "Bar Counter",
+    "source_key": "Bar Counter",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "Shelves of bottles, a till, and crates tucked beneath. A loose crate hides something wedged behind it.",
+    "desc_zh": "瓶架林列、暗格潜藏；松动木箱之后似有密物。"
+  },
+  "L021": {
+    "name": "Stair Landing",
+    "source_key": "Stair Landing",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A narrow staircase creaks toward the upper rooms. A rope discourages casual wanderers.",
+    "desc_zh": "吱呀作响的窄楼梯通往二层，绳索拦着闲杂闯入。"
+  },
+  "L022": {
+    "name": "Storeroom Door",
+    "source_key": "Storeroom Door",
+    "node_type": "location",
+    "tags": [],
+    "desc_en": "A stout oak door with a brass four-dial combination lock. The correct code is 0415.",
+    "desc_zh": "厚橡木库门带黄铜四位拨盘锁，正确密码为0415。"
+  },
+  "P001": {
+    "name": "Town Crier Jessa",
+    "source_key": "Town Crier Jessa",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Jessa stands atop a low crate in the square, ringing a handbell as she calls out news of incoming ships, unexplained bloodstains, and the mayor's increasingly desperate decrees.",
+    "desc_zh": "报信人立箱摇铃，宣告来船与血迹之事，政令与流言并传。"
+  },
+  "P002": {
+    "name": "Street Performer Jorin",
+    "source_key": "Street Performer Jorin",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Jorin juggles knives and colored stones for gathered onlookers. Quick with a joke and quicker with his hands, he hears rumors before most anyone else.",
+    "desc_zh": "街头艺人乔林抛刀弄石，笑语连珠；耳听八方，最先得闻传闻。"
+  },
+  "P003": {
+    "name": "Fishmonger Talo",
+    "source_key": "Fishmonger Talo",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Talo's stall overflows with the day's catch laid over crushed ice. He knows every captain on the docks and the gossip that rides in with their ships.",
+    "desc_zh": "鱼贩摊前冰鲜满布，识尽船长往来，海上传言尽入其耳。"
+  },
+  "P004": {
+    "name": "Spice Seller Nima",
+    "source_key": "Spice Seller Nima",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Nima sells jars of pungent spices and dried peppers from distant ports. Her keen nose and sharper memory make her a quiet observer of who buys what and why.",
+    "desc_zh": "香料商妮玛售远港辛物，记忆敏锐，洞察谁买何物。"
+  },
+  "P005": {
+    "name": "Cleric Serah",
+    "source_key": "Cleric Serah",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Serah, a middle-aged cleric of the sea goddess, tends to sailors and townsfolk alike. She listens more than she speaks and keeps a careful eye on omens from the harbor—and on the strange emptiness in the eyes of those who wake up with blood on their doorsteps.",
+    "desc_zh": "海之女神的司祭塞拉寡言慎行，照拂众人；尤留意血迹与失忆之兆。"
+  },
+  "P006": {
+    "name": "Novice Arel",
+    "source_key": "Novice Arel",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Arel is a young acolyte sweeping stone floors and lighting candles. Nervous but earnest, they have seen more than Serah realizes and struggle with what to share.",
+    "desc_zh": "年轻侍者阿雷尔扫地燃烛，见闻甚多却欲言又止。"
+  },
+  "P007": {
+    "name": "Mitch",
+    "source_key": "Mitch",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Mitch is a broad-shouldered lumberjack with calloused hands and haunted eyes. He insists he just wants someone to uncover the truth behind the bloodstains, but his agitation cuts a little too deep.",
+    "desc_zh": "魁梧伐木者米奇神色惶然，求查血案真相，情绪难平。"
+  },
+  "P008": {
+    "name": "Mayor Elric",
+    "source_key": "Mayor Elric",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Mayor Elric is a tired man in a well-kept coat, juggling merchants' demands and the growing panic over unexplained bloodstains.",
+    "desc_zh": "市长埃尔里克衣着考究，周旋诸务，维持城镇秩序却心力交瘁。"
+  },
+  "P009": {
+    "name": "Scribe Loth",
+    "source_key": "Scribe Loth",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Loth is a meticulous scribe surrounded by inkpots and scrolls. He files complaints, tallies taxes, and occasionally buries inconvenient paperwork for the right favor.",
+    "desc_zh": "书记官洛斯执笔如山，既记税务亦藏隐情。"
+  },
+  "P010": {
+    "name": "Gate Guard Ren",
+    "source_key": "Gate Guard Ren",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Ren leans on his spear at the harbor gate, sizing up everyone who passes. He's seen enough trouble to be wary, but a kind word or shared drink can loosen his tongue.",
+    "desc_zh": "港门守卫伦持矛观人，谨慎寡言，酒后或吐真言。"
+  },
+  "P011": {
+    "name": "Dockmaster Hara",
+    "source_key": "Dockmaster Hara",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Hara keeps a ledger tucked under one arm as she strides up and down the docks. She knows which ships arrived late, which cargo went missing, and which captains owe favors.",
+    "desc_zh": "码头管事哈拉账本在手，船期货物人情概无一疏。"
+  },
+  "P012": {
+    "name": "Deckhand Finn",
+    "source_key": "Deckhand Finn",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Finn is a young deckhand with rope-burned hands and boundless curiosity. He listens in on sailor gossip and can point out trouble brewing on the piers.",
+    "desc_zh": "年轻水手芬恩手上有绳灼痕，好奇多问，常闻码头秘事。"
+  },
+  "P013": {
+    "name": "Foreman Kesh",
+    "source_key": "Foreman Kesh",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Kesh oversees the loading crews with a barked order and a sharp eye. He insists everything is above board, but his ledgers don't always match what moves in the night.",
+    "desc_zh": "工头凯什指挥如雷，账目却暗藏疑云。"
+  },
+  "P014": {
+    "name": "Smuggler Lia",
+    "source_key": "Smuggler Lia",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Lia moves quietly through the shadows beneath the warehouses. She trades in information as much as contraband and always seems to know who's asking too many questions.",
+    "desc_zh": "走私者莉娅，行迹隐秘之女，消息与违禁之物皆可交易。"
+  },
+  "P015": {
+    "name": "Old Tellan",
+    "source_key": "Old Tellan",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Tellan sits on the well's rim spinning stories for anyone who will listen. Some tales are harmless gossip, others hint at things buried under the town.",
+    "desc_zh": "老特兰井边说书，故事中暗藏地下之秘。"
+  },
+  "P016": {
+    "name": "Captain Varr",
+    "source_key": "Captain Varr",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Captain Varr is a broad-shouldered veteran with a scar along his jaw. He takes the town's safety personally and has little patience for fools, but respects those who pull their weight.",
+    "desc_zh": "守卫队长瓦尔肩宽下颌有疤，铁面无私，誓守城镇安危。"
+  },
+  "P017": {
+    "name": "Street Urchin Pip",
+    "source_key": "Street Urchin Pip",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Pip is a sharp-eyed child who knows every shortcut and loose shutter in the alleyways.",
+    "desc_zh": "街头小鬼皮普眼尖机灵，熟知暗巷捷径与松动的窗栓。"
+  },
+  "P018": {
+    "name": "Fence Caris",
+    "source_key": "Fence Caris",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Caris leans in the shadows near a back door, dealing in small stolen goods and no questions asked.",
+    "desc_zh": "销赃者卡里斯倚，阴影中人，专收赃物、不问来历。"
+  },
+  "P019": {
+    "name": "Cook Brenna",
+    "source_key": "Cook Brenna",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Brenna is the Copper Cup's harried cook, always juggling pots and shouting orders through the kitchen door.",
+    "desc_zh": "厨娘布伦娜忙于锅灶，却耳听八方。"
+  },
+  "P020": {
+    "name": "Caretaker Ilya",
+    "source_key": "Caretaker Ilya",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Ilya quietly cleans the old shrine and replaces wilted offerings. She claims to have seen strange lights near the well on stormy nights.",
+    "desc_zh": "看守人伊莉娅打扫古祠、更换供物，曾见井旁异光。"
+  },
+  "P021": {
+    "name": "Bridge Watcher Sol",
+    "source_key": "Bridge Watcher Sol",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Sol leans on the bridge railing during most evening watches, counting lanterns and noting who comes and goes along the river path.",
+    "desc_zh": "桥卫索尔夜里倚栏数灯，记录来往之人。"
+  },
+  "P022": {
+    "name": "Boatman Jaro",
+    "source_key": "Boatman Jaro",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Jaro tends a small skiff tied to a worn post. For the right price, he'll ferry people quietly along the river—or look the other way when others do.",
+    "desc_zh": "船夫贾罗看着系在旧桩上的小艇，见钱行事，善于装作不知。"
+  },
+  "P023": {
+    "name": "Fisher Rian",
+    "source_key": "Fisher Rian",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Rian mends nets on an upturned crate outside his shack, grumbling about changing tides and strange catches pulled from deeper waters.",
+    "desc_zh": "补网渔夫里安抱怨潮汐怪异。"
+  },
+  "P024": {
+    "name": "Fisher Mira",
+    "source_key": "Fisher Mira",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Mira cleans fish with quick, practiced motions, humming an old sea-song under her breath.",
+    "desc_zh": "渔妇米拉手法娴熟地剖鱼，低声哼着古老海歌，也承认偶尔醒来靴子湿透却不知缘由。"
+  },
+  "P025": {
+    "name": "Town Wizard Arlen",
+    "source_key": "Town Wizard Arlen",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Arlen is a reclusive wizard who seldom leaves his guarded home. Whispers say he can pluck souls back from the brink and smooth away memories like ink from parchment.",
+    "desc_zh": "镇法师阿伦深居简出，传言能改记忆、追魂魄。"
+  },
+  "P026": {
+    "name": "Mara",
+    "source_key": "Mara",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "The proprietor. Married to Brin. Her wedding anniversary is April 15th. Brisk, perceptive, and inclined to help if treated respectfully.",
+    "desc_zh": "酒馆老板娘玛拉，嫁与布林；精明干练，若被尊重则愿帮忙。结婚纪念日四月十五。"
+  },
+  "P027": {
+    "name": "Brin",
+    "source_key": "Brin",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "Mara's husband. A weather-beaten sailor with a limp. Forgetful of his wedding anniversary date.",
+    "desc_zh": "玛拉之夫布林，跛足水手饱经风霜，常忘纪念日。"
+  },
+  "P028": {
+    "name": "Edda",
+    "source_key": "Edda",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "A scholar cataloging tavern legends, forever scribbling into a leather folio.",
+    "desc_zh": "学者埃达酒馆记传说不辍。"
+  },
+  "P029": {
+    "name": "Thom",
+    "source_key": "Thom",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "An off-duty guard who prefers order and dislikes surprises upstairs.",
+    "desc_zh": "休班守卫托姆喜秩序，讨厌楼上的意外发生。"
+  },
+  "P030": {
+    "name": "Lysa",
+    "source_key": "Lysa",
+    "node_type": "npc",
+    "tags": [],
+    "desc_en": "A traveling bard tuning a battered lute, eager for new tales.",
+    "desc_zh": "游吟诗人莱莎调琴，渴望新故事。"
+  },
+  "I001": {
+    "name": "Bronze Fountain Coin",
+    "source_key": "Bronze Fountain Coin",
+    "node_type": "item",
+    "tags": [],
+    "desc_en": "A battered bronze coin wedged between the stones of the central fountain. Its face is worn smooth by years of water and fingertips, but faint engraving hints at an older crest.",
+    "desc_zh": "铜币残旧，嵌于喷泉石缝之间；久经水磨、人手摩挲，纹面几近磨平，唯余淡淡刻痕，似古老城徽，耐人寻味。"
+  },
+  "I002": {
+    "name": "Salt-Stained Prayer Beads",
+    "source_key": "Salt-Stained Prayer Beads",
+    "node_type": "item",
+    "tags": [],
+    "desc_en": "A loop of smooth wooden beads, crusted with a thin line of salt where they rest against wet robes. Some of the beads are carved with tiny wave symbols.",
+    "desc_zh": "木珠圆润，系成一串；贴湿袍处盐霜点点、晶华附着，数珠细刻浪纹，若潮声在耳，令人不寒而栗。"
+  },
+  "I004": {
+    "name": "Cracked Spyglass",
+    "source_key": "Cracked Spyglass",
+    "node_type": "item",
+    "tags": [],
+    "desc_en": "A once-fine brass spyglass with a hairline crack across one lens. It smells faintly of salt and oil and bears tiny etchings matching the town's crest.",
+    "desc_zh": "黄铜望远镜昔日精巧，今镜片细裂如发；近嗅咸腥油气扑鼻，筒身微刻纹与镇徽相类，来历不凡。"
+  },
+  "I007": {
+    "name": "Guard's Lost Signet",
+    "source_key": "Guard's Lost Signet",
+    "node_type": "item",
+    "tags": [],
+    "desc_en": "A small silver signet ring bearing the town's crest, scuffed as though it has been dragged along stone. It looks recently dropped.",
+    "desc_zh": "银质印戒刻镇徽，擦痕累累，仿佛曾被石上拖曳；观其新旧，似方才遗落，蛛丝马迹尽在其间。"
+  },
+  "I008": {
+    "name": "Hidden Alley Knife",
+    "source_key": "Hidden Alley Knife",
+    "node_type": "item",
+    "tags": [],
+    "desc_en": "A narrow-bladed knife tucked behind a loose brick at knee height. Its handle is wrapped in worn blue cloth, and a faint rust stain darkens the edge.",
+    "desc_zh": "窄刃匕首藏于松砖之后，低伏膝下；柄缠旧蓝布，刃缘隐见锈痕点染，寒光不露却杀机暗伏。"
+  },
+  "I009": {
+    "name": "Carved Driftwood Charm",
+    "source_key": "Carved Driftwood Charm",
+    "node_type": "item",
+    "tags": [],
+    "desc_en": "A piece of pale driftwood carved into the shape of a curling wave, hung on a faded blue cord. It smells faintly of incense and sea-salt.",
+    "desc_zh": "浅色漂木雕作卷浪之形，以褪蓝绳系悬；近闻微有香烟与海盐之气，祭祀余韵未散。"
+  },
+  "C001": {
+    "name": "Weathered Notice",
+    "source_key": "Weathered Notice",
+    "node_type": "clue",
+    "tags": [],
+    "desc_en": "A curling parchment tacked to the town hall board, ink blurred by rain. It mentions strange lights near the old well and requests witnesses to report to the mayor's office.",
+    "desc_zh": "告示卷翘，雨洗墨晕；其文提及古井旁异光时现，募人证赴市政厅禀报，字里行间，欲盖弥彰。"
+  },
+  "C002": {
+    "name": "Frayed Mooring Rope",
+    "source_key": "Frayed Mooring Rope",
+    "node_type": "clue",
+    "tags": [],
+    "desc_en": "A length of mooring rope stained a darker color near one end. Up close, the fibers look as though they were cut more than worn through by the sea.",
+    "desc_zh": "系船之绳一端色泽深沉如渍；细察纤维，不似风浪磨损，倒像刀痕所断，颇有蹊跷。"
+  },
+  "C003": {
+    "name": "Smugglers' Ledger",
+    "source_key": "Smugglers' Ledger",
+    "node_type": "clue",
+    "tags": [],
+    "desc_en": "A slim ledger bound in cracked leather, its pages filled with coded notes about shipments, routes, and initials. A few entries are smudged with what looks like river-mud.",
+    "desc_zh": "皮装薄册，页页皆以暗码记载货物、路线与姓名缩写；数处沾泥如河淤，愈显其来路不正。"
+  },
+  "C004": {
+    "name": "Hidden Scrap",
+    "source_key": "Hidden Scrap",
+    "node_type": "clue",
+    "tags": [],
+    "desc_en": "A grease-stained note tucked behind a loose crate: 'cellar restock / upstairs lock is our wedding anniversary date'.",
+    "desc_zh": "油渍纸条藏于松动木箱之后，其上寥寥数语：『地下室补货／楼上锁码乃我二人结发纪念之日』，暗示机关所在。"
+  }
+}

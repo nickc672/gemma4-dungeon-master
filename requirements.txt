@@ -6,3 +6,11 @@ wordfreq==3.*         # frequency dictionary
 nltk==3.*             # WordNet access
 rapidfuzz==3.*        # optional fuzzy matching
 pytest==8.*           # test runner
+faiss-cpu>=1.8.0,<2
+mcp==1.26.0
+numpy>=1.26,<3
+ollama==0.6.1
+psycopg==3.3.2
+pydantic==2.12.5
+pytest==9.0.2
+streamlit==1.53.1

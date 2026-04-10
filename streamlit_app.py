@@ -1,51 +1,238 @@
 from __future__ import annotations
 
 import base64
+import random
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
 
 import streamlit as st
+import streamlit.components.v1 as components
 
-from orchestrator.pipeline import Orchestrator
-from orchestrator.story import STARTING_STATE
+from orchestrator.app_config import get_ollama_default_model, get_ollama_model_choices, get_roll_mode
+from orchestrator.runtime_flow.pipeline import StoryEngine
+from orchestrator.world_state.world_model import build_world_model
 
 ###
 PLAYER_BG_PATH = Path("UI-Assets/town-square.jpg")
 APP_BG_PATH = Path("UI-Assets/FantasyPort.jpg")
+FANTASTIC_DICE_URL = "https://fantasticdice.games/"
+DICE_COMPONENT_DIR = Path(__file__).resolve().parent / "components" / "fantastic_dice_component"
+FANTASTIC_DICE_COMPONENT = components.declare_component(
+    "fantastic_dice_component",
+    path=str(DICE_COMPONENT_DIR),
+)
+ROLL_REQUIRED_SENTINEL = "__DMC_ROLL_REQUIRED__"
+ROLL_REQUIRED_MESSAGE = (
+    "A dice roll is required before I can resolve that action. "
+    "Click Roll the Dice to continue."
+)
+ROLL_THEME_COLORS = [
+    "#C84C32",
+    "#2E86AB",
+    "#3FA34D",
+    "#7A4CC2",
+    "#D9A404",
+    "#C13C8A",
+    "#2F4858",
+    "#C96F2D",
+]
 
 
-def _parse_keys(raw: str) -> List[str]:
-    return [key.strip() for key in raw.split(",") if key.strip()]
+def _default_world_model():
+    return build_world_model()
 
 
-def _config_signature(model: str, keys: List[str], starting_state: str) -> str:
-    return f"{model}|{','.join(keys)}|{starting_state}"
+def _get_installed_ollama_models() -> list[str]:
+    try:
+        result = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+
+    models: list[str] = []
+    for line in result.stdout.splitlines():
+        row = line.strip()
+        if not row or row.startswith("NAME"):
+            continue
+        model = row.split()[0].strip()
+        if model and model not in models:
+            models.append(model)
+    return models
 
 
-def _initialize_session(model: str, keys: List[str], starting_state: str) -> None:
-    orchestrator = Orchestrator(
+def _config_signature(model: str, starting_location: str, starting_state: str, roll_mode: str) -> str:
+    return f"{model}|{starting_location}|{starting_state}|{roll_mode}"
+
+
+def _resolve_manual_roll_notation(request: Dict[str, Any] | None) -> str:
+    payload = dict(request or {})
+    tool_name = str(payload.get("tool_name") or "").strip()
+    args = dict(payload.get("arguments") or {})
+    if tool_name == "roll_dice":
+        try:
+            sides = int(args.get("sides", 20))
+            count = int(args.get("count", 1))
+        except (TypeError, ValueError):
+            return "1d20"
+        return f"{count}d{sides}"
+    return "1d20"
+
+
+def _resolve_manual_roll_max_face(request: Dict[str, Any] | None) -> int:
+    payload = dict(request or {})
+    tool_name = str(payload.get("tool_name") or "").strip()
+    args = dict(payload.get("arguments") or {})
+    if tool_name == "roll_dice":
+        try:
+            sides = int(args.get("sides", 20))
+        except (TypeError, ValueError):
+            return 20
+        return max(2, min(1000, sides))
+    # skill_check and fallback behavior are d20-based.
+    return 20
+
+
+def _activate_roll_request(request: Dict[str, Any] | None = None) -> None:
+    seq = int(st.session_state.get("roll_request_seq", 0))
+    seq += 1
+    st.session_state.roll_request_seq = seq
+    st.session_state.roll_request_id = f"roll-{seq}"
+    st.session_state.roll_request_tool = str((request or {}).get("tool_name") or "").strip()
+    st.session_state.roll_notation = _resolve_manual_roll_notation(request)
+    st.session_state.roll_max_face = _resolve_manual_roll_max_face(request)
+    st.session_state.awaiting_manual_roll = True
+    st.session_state.captured_manual_roll = None
+    st.session_state.dice_board_visible = False
+    st.session_state.dice_roll_nonce = 0
+    st.session_state.dice_theme_color = ""
+
+
+def _streamlit_manual_roll_provider(request: Dict[str, Any]) -> int:
+    latched_roll = st.session_state.get("latched_manual_roll")
+    if latched_roll is not None:
+        return int(latched_roll)
+    pending_roll = st.session_state.get("captured_manual_roll")
+    if pending_roll is None:
+        _activate_roll_request(request)
+        raise RuntimeError(ROLL_REQUIRED_SENTINEL)
+    value = int(pending_roll)
+    st.session_state.captured_manual_roll = None
+    st.session_state.latched_manual_roll = value
+    st.session_state.awaiting_manual_roll = False
+    st.session_state.roll_request_id = ""
+    st.session_state.roll_request_tool = ""
+    st.session_state.roll_notation = "1d20"
+    st.session_state.roll_max_face = 20
+    return value
+
+
+def _initialize_session(model: str, starting_location: str, starting_state: str, roll_mode: str) -> None:
+    engine = StoryEngine(
         model=model,
-        initial_keys=keys or None,
+        starting_location=starting_location,
         starting_state=starting_state,
+        roll_mode=roll_mode,
+        manual_roll_provider=_streamlit_manual_roll_provider if roll_mode == "manual" else None,
     )
     messages: List[Dict[str, str]] = []
     intro_text = starting_state
     try:
-        intro = orchestrator.generate_intro()
+        intro = engine.generate_intro()
         intro_text = intro.get("ic") or starting_state
     except Exception as exc:
         st.warning("Intro generation failed; showing the starting state instead.")
         st.exception(exc)
     messages.append({"role": "assistant", "content": intro_text})
 
-    st.session_state.orchestrator = orchestrator
+    st.session_state.orchestrator = engine
     st.session_state.messages = messages
     st.session_state.last_turn = {}
-    st.session_state.config_sig = _config_signature(model, keys, starting_state)
+    st.session_state.pending_player_input = None
+    st.session_state.captured_manual_roll = None
+    st.session_state.awaiting_manual_roll = False
+    st.session_state.last_roll_event_id = ""
+    st.session_state.roll_request_id = ""
+    st.session_state.roll_request_seq = 0
+    st.session_state.roll_request_tool = ""
+    st.session_state.roll_notation = "1d20"
+    st.session_state.roll_max_face = 20
+    st.session_state.completed_roll_request_id = ""
+    st.session_state.latched_manual_roll = None
+    st.session_state.dice_board_visible = False
+    st.session_state.dice_roll_nonce = 0
+    st.session_state.dice_theme_color = ""
+    st.session_state.config_sig = _config_signature(model, starting_location, starting_state, roll_mode)
 
 
-def _get_orchestrator() -> Orchestrator:
+def _get_story_engine() -> StoryEngine:
     return st.session_state.orchestrator
+
+
+def _append_assistant_message_once(text: str) -> None:
+    messages = st.session_state.get("messages", [])
+    if messages and messages[-1].get("role") == "assistant" and messages[-1].get("content") == text:
+        return
+    messages.append({"role": "assistant", "content": text})
+    st.session_state.messages = messages
+
+
+def _capture_roll_from_component(payload: Any) -> int | None:
+    if not st.session_state.get("pending_player_input"):
+        return None
+    if st.session_state.get("captured_manual_roll") is not None:
+        return None
+    if st.session_state.get("latched_manual_roll") is not None:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    roll_id = str(payload.get("roll_id") or "").strip()
+    if roll_id == st.session_state.get("last_roll_event_id"):
+        return None
+    current_request_id = str(st.session_state.get("roll_request_id") or "").strip()
+    payload_request_id = str(payload.get("request_id") or "").strip()
+    if current_request_id and payload_request_id and payload_request_id != current_request_id:
+        return None
+    effective_request_id = payload_request_id or current_request_id
+    if (
+        effective_request_id
+        and effective_request_id == str(st.session_state.get("completed_roll_request_id") or "").strip()
+    ):
+        return None
+
+    raw_value = payload.get("roll_value", payload.get("d20"))
+    if raw_value is None and isinstance(payload.get("die"), dict):
+        die_payload = payload.get("die") or {}
+        raw_value = die_payload.get("value", die_payload.get("result"))
+    try:
+        roll_value = int(raw_value)
+    except (TypeError, ValueError):
+        return None
+    max_face = int(st.session_state.get("roll_max_face", 20) or 20)
+    if roll_value < 1 or roll_value > max_face:
+        return None
+
+    if not roll_id:
+        roll_id = f"{effective_request_id or 'roll'}:{roll_value}"
+
+    st.session_state.captured_manual_roll = roll_value
+    st.session_state.last_roll_event_id = roll_id
+    st.session_state.awaiting_manual_roll = False
+    st.session_state.roll_request_id = ""
+    st.session_state.roll_request_tool = ""
+    st.session_state.roll_notation = "1d20"
+    st.session_state.roll_max_face = 20
+    if effective_request_id:
+        st.session_state.completed_roll_request_id = effective_request_id
+    return roll_value
 
 
 def _inject_player_background(image_path: Path) -> None:
@@ -105,6 +292,79 @@ def _inject_player_background(image_path: Path) -> None:
             background: rgba(8, 10, 14, 0.55);
             border-radius: 12px;
             padding: 0.15rem 0.85rem;
+          }}
+
+          .dice-roller-shell {{
+            margin-top: 0.8rem;
+            margin-bottom: 0.5rem;
+            border-radius: 14px;
+            border: 1px solid rgba(237, 228, 211, 0.2);
+            background: rgba(7, 10, 14, 0.72);
+            padding: 0.75rem 0.9rem;
+            transition: box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+          }}
+
+          .dice-roller-shell.active {{
+            border-color: rgba(252, 199, 62, 0.78);
+            box-shadow: 0 0 0 1px rgba(252, 199, 62, 0.35), 0 0 22px rgba(252, 199, 62, 0.52);
+            animation: dice-pulse 1.2s ease-in-out infinite alternate;
+          }}
+
+          .dice-roller-shell.inactive {{
+            opacity: 0.78;
+          }}
+
+          .manual-roll-cta {{
+            display: flex;
+            justify-content: center;
+            margin: 0.9rem 0 0.75rem;
+          }}
+
+          .manual-roll-cta button {{
+            min-width: min(100%, 320px);
+            width: min(100%, 320px);
+            font-weight: 700;
+          }}
+
+          .dice-roller-header {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.85rem;
+          }}
+
+          .dice-token {{
+            width: 2.2rem;
+            height: 2.2rem;
+            border-radius: 8px;
+            border: 1px solid rgba(230, 221, 201, 0.4);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.82rem;
+            letter-spacing: 0.03em;
+            color: #f3efe6;
+            background: linear-gradient(140deg, rgba(65, 45, 17, 0.85), rgba(18, 15, 9, 0.9));
+            box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.55);
+          }}
+
+          .dice-roller-title {{
+            margin: 0;
+            color: #f3efe6;
+            font-size: 0.98rem;
+            line-height: 1.2;
+          }}
+
+          .dice-roller-note {{
+            margin-top: 0.4rem;
+            color: rgba(243, 239, 230, 0.78);
+            font-size: 0.84rem;
+          }}
+
+          @keyframes dice-pulse {{
+            from {{ box-shadow: 0 0 0 1px rgba(252, 199, 62, 0.35), 0 0 14px rgba(252, 199, 62, 0.38); }}
+            to {{ box-shadow: 0 0 0 1px rgba(252, 199, 62, 0.45), 0 0 28px rgba(252, 199, 62, 0.66); }}
           }}
 
           div[data-testid="stVerticalBlock"]:has(#character-image-anchor) {{
@@ -200,14 +460,12 @@ def _dot_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def _build_story_graph_dot(snapshot: Dict[str, Any]) -> str:
+def _build_world_state_dot(snapshot: Dict[str, Any]) -> str:
     nodes = snapshot.get("nodes") or []
     edges = snapshot.get("edges") or []
-    active = set(snapshot.get("active_keys") or [])
-    focus = set(snapshot.get("focus") or [])
 
     lines = [
-        "graph Story {",
+        "graph WorldState {",
         '  graph [bgcolor="transparent", splines=true, overlap=false];',
         '  node [shape=ellipse, style=filled, fontname="Helvetica", fontsize=11, color="#2f3a45"];',
         '  edge [color="#98a1ab", penwidth=1.2];',
@@ -218,12 +476,13 @@ def _build_story_graph_dot(snapshot: Dict[str, Any]) -> str:
         if not key:
             continue
         label = _dot_escape(key)
-        if key in focus:
+        flags = node.get("flags") or {}
+        if flags.get("current_location"):
             fill = "#f4d35e"
             font = "#1f2328"
             pen = "#b08900"
             penwidth = 2.4
-        elif key in active:
+        elif flags.get("in_scene"):
             fill = "#61c9a8"
             font = "#0b1a15"
             pen = "#2f7f64"
@@ -250,6 +509,7 @@ def _build_story_graph_dot(snapshot: Dict[str, Any]) -> str:
 
 def main() -> None:
     st.set_page_config(page_title="The Dungeon Master's Companion", layout="wide")
+    world_defaults = _default_world_model()
     st.markdown(
         '<h1 class="tangerine-bold" '
         'style="font-size:70px; text-align:center; margin-bottom:0.25rem; font-family:\'Tangerine\', cursive;">'
@@ -263,34 +523,118 @@ def main() -> None:
 
     with st.sidebar:
         st.header("Session")
-        model = st.text_input("Ollama model", value=st.session_state.get("model_input", "llama3.1:8b"), key="model_input")
-        keys_raw = st.text_input(
-            "Starting keys (comma-separated)",
-            value=st.session_state.get("keys_input", ""),
-            key="keys_input",
-        )
+        model_choices = get_ollama_model_choices()
+        for installed_model in _get_installed_ollama_models():
+            if installed_model not in model_choices:
+                model_choices.append(installed_model)
+        session_model = st.session_state.get("model_input", get_ollama_default_model())
+        if session_model not in model_choices:
+            model_choices = [session_model, *model_choices]
+        selected_model_index = model_choices.index(session_model)
+        model = st.selectbox(
+            "Ollama model",
+            options=model_choices,
+            index=selected_model_index,
+            key="model_input",
+        ) or ""
+
+        starting_location = st.text_input(
+            "Starting location",
+            value=st.session_state.get("starting_location_input", world_defaults.starting_location),
+            key="starting_location_input",
+        ) or ""
+
         starting_state = st.text_area(
             "Starting state",
-            value=st.session_state.get("starting_state_input", STARTING_STATE),
+            value=st.session_state.get("starting_state_input", world_defaults.starting_state),
             height=200,
             key="starting_state_input",
-        )
+        ) or ""
+
         start_new = st.button("Start new session")
         show_status = st.checkbox("Show story status", value=True)
         show_debug = st.checkbox("Show debug info", value=False)
+        default_roll_mode = get_roll_mode()
+        roll_mode = st.selectbox(
+            "Roll resolution",
+            options=["auto", "manual"],
+            index=0 if st.session_state.get("roll_mode_input", default_roll_mode) == "auto" else 1,
+            key="roll_mode_input",
+        )
+        st.caption("`manual` waits for a player 1d20 roll from the Roll the Dice panel.")
 
-    keys = _parse_keys(keys_raw)
-    sig = _config_signature(model, keys, starting_state)
+    sig = _config_signature(model, starting_location, starting_state, roll_mode)
 
     if "orchestrator" not in st.session_state:
-        _initialize_session(model, keys, starting_state)
+        _initialize_session(model, starting_location, starting_state, roll_mode)
     elif start_new or st.session_state.get("config_sig") != sig:
-        _initialize_session(model, keys, starting_state)
+        _initialize_session(model, starting_location, starting_state, roll_mode)
 
     _inject_player_background(PLAYER_BG_PATH)
     _inject_app_background(APP_BG_PATH)
 
-    orchestrator = _get_orchestrator()
+    engine = _get_story_engine()
+    try:
+        engine.adapter.verbose = bool(show_debug)
+    except Exception:
+        pass
+
+    # Guard against stale UI state across reruns/reloads.
+    if "completed_roll_request_id" not in st.session_state:
+        st.session_state.completed_roll_request_id = ""
+    if "latched_manual_roll" not in st.session_state:
+        st.session_state.latched_manual_roll = None
+    if "roll_request_tool" not in st.session_state:
+        st.session_state.roll_request_tool = ""
+    if "roll_notation" not in st.session_state:
+        st.session_state.roll_notation = "1d20"
+    if "roll_max_face" not in st.session_state:
+        st.session_state.roll_max_face = 20
+    if "dice_board_visible" not in st.session_state:
+        st.session_state.dice_board_visible = False
+    if "dice_roll_nonce" not in st.session_state:
+        st.session_state.dice_roll_nonce = 0
+    if "dice_theme_color" not in st.session_state:
+        st.session_state.dice_theme_color = ""
+    if roll_mode != "manual":
+        st.session_state.awaiting_manual_roll = False
+        st.session_state.pending_player_input = None
+        st.session_state.captured_manual_roll = None
+        st.session_state.roll_request_id = ""
+        st.session_state.roll_request_tool = ""
+        st.session_state.roll_notation = "1d20"
+        st.session_state.roll_max_face = 20
+        st.session_state.latched_manual_roll = None
+        st.session_state.dice_board_visible = False
+        st.session_state.dice_roll_nonce = 0
+        st.session_state.dice_theme_color = ""
+    elif st.session_state.get("awaiting_manual_roll", False) and not st.session_state.get("pending_player_input"):
+        st.session_state.awaiting_manual_roll = False
+        st.session_state.captured_manual_roll = None
+        st.session_state.roll_request_id = ""
+        st.session_state.roll_request_tool = ""
+        st.session_state.roll_notation = "1d20"
+        st.session_state.roll_max_face = 20
+        st.session_state.latched_manual_roll = None
+        st.session_state.dice_board_visible = False
+        st.session_state.dice_roll_nonce = 0
+        st.session_state.dice_theme_color = ""
+    elif (
+        st.session_state.get("pending_player_input")
+        and len(st.session_state.get("messages", [])) <= 1
+    ):
+        # Fresh/intro-only sessions must never start in a waiting-for-roll state.
+        st.session_state.awaiting_manual_roll = False
+        st.session_state.pending_player_input = None
+        st.session_state.captured_manual_roll = None
+        st.session_state.roll_request_id = ""
+        st.session_state.roll_request_tool = ""
+        st.session_state.roll_notation = "1d20"
+        st.session_state.roll_max_face = 20
+        st.session_state.latched_manual_roll = None
+        st.session_state.dice_board_visible = False
+        st.session_state.dice_roll_nonce = 0
+        st.session_state.dice_theme_color = ""
 
     play_tab, dm_tab = st.tabs(["Player View", "DM Tools"])
 
@@ -306,6 +650,72 @@ def main() -> None:
                     with st.chat_message(message["role"]):
                         st.markdown(message["content"])
 
+            roll_requested = bool(
+                roll_mode == "manual"
+                and st.session_state.get("awaiting_manual_roll", False)
+                and st.session_state.get("pending_player_input")
+                and st.session_state.get("captured_manual_roll") is None
+                and st.session_state.get("latched_manual_roll") is None
+            )
+            st.session_state.roll_requested = roll_requested
+            if roll_requested:
+                _, roll_button_col, _ = st.columns([1, 2.2, 1])
+                with roll_button_col:
+                    roll_clicked = st.button("Roll the Dice", key="manual_roll_trigger", use_container_width=True)
+                if roll_clicked:
+                    st.session_state.dice_board_visible = True
+                    st.session_state.dice_roll_nonce = int(st.session_state.get("dice_roll_nonce", 0)) + 1
+                    st.session_state.dice_theme_color = random.choice(ROLL_THEME_COLORS)
+
+            if roll_requested and st.session_state.get("dice_board_visible", False):
+                component_payload = FANTASTIC_DICE_COMPONENT(
+                    active=True,
+                    notation=str(st.session_state.get("roll_notation") or "1d20"),
+                    request_id=str(st.session_state.get("roll_request_id") or ""),
+                    roll_nonce=int(st.session_state.get("dice_roll_nonce", 0)),
+                    theme_color=str(st.session_state.get("dice_theme_color") or ""),
+                    key="fantastic_dice_component",
+                    default=None,
+                )
+                _capture_roll_from_component(component_payload)
+
+            pending_input = st.session_state.get("pending_player_input")
+            captured_roll = st.session_state.get("captured_manual_roll")
+            if pending_input and captured_roll is not None:
+                with st.spinner("Applying dice roll..."):
+                    try:
+                        turn = engine.run_turn(str(pending_input))
+                        response = turn["narration"]["ic"]
+                        st.session_state.last_turn = turn
+                        st.session_state.awaiting_manual_roll = False
+                        st.session_state.pending_player_input = None
+                        st.session_state.captured_manual_roll = None
+                        st.session_state.roll_request_id = ""
+                        st.session_state.roll_request_tool = ""
+                        st.session_state.roll_notation = "1d20"
+                        st.session_state.roll_max_face = 20
+                        st.session_state.latched_manual_roll = None
+                        st.session_state.dice_board_visible = False
+                        st.session_state.dice_theme_color = ""
+                        st.session_state.messages.append({"role": "assistant", "content": response})
+                    except Exception as exc:
+                        message = str(exc)
+                        if ROLL_REQUIRED_SENTINEL in message:
+                            _append_assistant_message_once(ROLL_REQUIRED_MESSAGE)
+                        else:
+                            st.session_state.pending_player_input = None
+                            st.session_state.captured_manual_roll = None
+                            st.session_state.roll_request_id = ""
+                            st.session_state.roll_request_tool = ""
+                            st.session_state.roll_notation = "1d20"
+                            st.session_state.roll_max_face = 20
+                            st.session_state.latched_manual_roll = None
+                            st.session_state.dice_board_visible = False
+                            st.session_state.dice_theme_color = ""
+                            _append_assistant_message_once("The Dungeon Master is unavailable right now.")
+                            st.error(f"Failed to generate a response: {exc}")
+                st.rerun()
+
             with st.form("chat_form", clear_on_submit=True):
                 player_input = st.text_area(
                     "Describe what your character does...",
@@ -315,15 +725,48 @@ def main() -> None:
                 submitted = st.form_submit_button("Send")
 
             if submitted and player_input.strip():
+                if roll_mode == "manual" and roll_requested:
+                    pending_notation = str(st.session_state.get("roll_notation") or "1d20")
+                    _append_assistant_message_once(
+                        f"A roll is still pending. Waiting for the {pending_notation} result."
+                    )
+                    st.rerun()
+
                 st.session_state.messages.append({"role": "user", "content": player_input})
+
+                if roll_mode == "manual":
+                    st.session_state.pending_player_input = player_input
+                    st.session_state.latched_manual_roll = None
                 with st.spinner("The Dungeon Master is thinking..."):
                     try:
-                        turn = orchestrator.run_turn(player_input)
+                        turn = engine.run_turn(player_input)
                         response = turn["narration"]["ic"]
                         st.session_state.last_turn = turn
+                        st.session_state.awaiting_manual_roll = False
+                        st.session_state.pending_player_input = None
+                        st.session_state.captured_manual_roll = None
+                        st.session_state.roll_request_id = ""
+                        st.session_state.roll_request_tool = ""
+                        st.session_state.roll_notation = "1d20"
+                        st.session_state.roll_max_face = 20
+                        st.session_state.latched_manual_roll = None
+                        st.session_state.dice_board_visible = False
+                        st.session_state.dice_theme_color = ""
                     except Exception as exc:
-                        response = "The Dungeon Master is unavailable right now."
-                        st.error(f"Failed to generate a response: {exc}")
+                        message = str(exc)
+                        if ROLL_REQUIRED_SENTINEL in message:
+                            response = ROLL_REQUIRED_MESSAGE
+                        else:
+                            st.session_state.pending_player_input = None
+                            st.session_state.roll_request_id = ""
+                            st.session_state.roll_request_tool = ""
+                            st.session_state.roll_notation = "1d20"
+                            st.session_state.roll_max_face = 20
+                            st.session_state.latched_manual_roll = None
+                            st.session_state.dice_board_visible = False
+                            st.session_state.dice_theme_color = ""
+                            response = "The Dungeon Master is unavailable right now."
+                            st.error(f"Failed to generate a response: {exc}")
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 st.rerun()
 
@@ -370,16 +813,18 @@ def main() -> None:
             )
 
     with dm_tab:
-        snapshot = orchestrator.snapshot()
+        snapshot = engine.snapshot()
         st.subheader("Campaign Status")
         if show_status:
             beat = snapshot.get("beat_state", {})
             st.markdown(
                 f"**Beat:** {beat.get('current_index', 0) + 1} "
-                f"of {len(orchestrator.beat_list)} - {beat.get('current', '')}"
+                f"of {beat.get('total', 0)} - {beat.get('current', '')}"
             )
-            st.markdown(f"**Focus:** {', '.join(snapshot.get('focus') or []) or 'None'}")
-            st.markdown(f"**Active keys:** {', '.join(snapshot.get('active_keys') or []) or 'None'}")
+            st.markdown(f"**Current location:** {snapshot.get('current_location') or 'Unknown'}")
+            scene = snapshot.get("scene") or {}
+            st.markdown(f"**Actors here:** {', '.join(scene.get('actors_here') or []) or 'None'}")
+            st.markdown(f"**Items here:** {', '.join(scene.get('items_here') or []) or 'None'}")
             st.markdown(f"**Story status:** {snapshot.get('story_status') or 'Not set'}")
             summary = snapshot.get("session_summary") or ""
             if summary:
@@ -387,22 +832,20 @@ def main() -> None:
         else:
             st.markdown("Story status display is disabled in the sidebar.")
 
-        st.subheader("Story Graph")
+        st.subheader("World State")
         if snapshot.get("nodes"):
-            graph_dot = _build_story_graph_dot(snapshot)
+            graph_dot = _build_world_state_dot(snapshot)
             st.graphviz_chart(graph_dot, use_container_width=True)
-            st.caption("Gold = focus. Teal = active. Gray = inactive.")
+            st.caption("Gold = current location. Teal = current scene. Gray = elsewhere.")
         else:
-            st.markdown("No story graph data yet.")
+            st.markdown("No world-state data yet.")
 
         if show_debug:
-            debug_data = st.session_state.get("last_turn", {}).get("llm_debug")
+            last_turn = st.session_state.get("last_turn", {}) or {}
+            debug_data = last_turn.get("llm_trace") or last_turn.get("llm_debug")
             with st.expander("Debug", expanded=False):
                 if debug_data:
-                    for step, payload in debug_data.items():
-                        st.markdown(f"**{step}**")
-                        st.text_area(f"{step} prompt", value=payload.get("prompt", ""), height=120)
-                        st.text_area(f"{step} raw", value=payload.get("raw", ""), height=120)
+                    st.json(debug_data, expanded=False)
                 else:
                     st.markdown("No debug info available yet.")
 

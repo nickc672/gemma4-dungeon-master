@@ -1,0 +1,34 @@
+{
+  "version": 2,
+  "meta": {
+    "created_ts": "2026-02-12T22:51:53.728875-05:00",
+    "notes": "BEAT_LIST with EN+ZH (ZH is literary; key info preserved)."
+  },
+  "beats": [
+    {
+      "id": "B01",
+      "text_en": "Introduce the town square at dusk, the weary mood of the townsfolk, and rumors of unexplained bloodstains with no missing bodies. Let the player explore until they learn enough about the mystery to proceed with an investigation.",
+      "text_zh": "暮临广场，民心惶惶，皆言血痕无尸、夜不成寐。任玩家四处探访，至得其要，方可抽丝剥茧而进。"
+    },
+    {
+      "id": "B02",
+      "text_en": "Once the player encounters Mitch, the anxious lumberjack, he will plead with the newly arrived player in the square to investigate the bloodstains. Mitch will suggest that the Wizard is involved, but very dangerous.",
+      "text_zh": "一旦邂逅樵夫米奇，焦灼如焚，必求新来者查明血迹之谜，并暗示法师牵连其间，然凶险莫测，切勿轻犯。"
+    },
+    {
+      "id": "B03",
+      "text_en": "Let the player freely investigate houses and locations around town to gather clues about the bloodstains, memory gaps, and the reclusive town wizard.",
+      "text_zh": "任玩家遍访街巷屋舍，搜罗线索：血迹何来、记忆何失、法师何以深居简出，务求旁征博引、渐成眉目。"
+    },
+    {
+      "id": "B04",
+      "text_en": "When the player has gathered enough information to have a theory the wizard will speak with them directly with Mitch in attendance. The wizard will reveal that Mitch is the killer and each night he erases everyones memory and undoes his crimes. Mitch is driven to madness by the revelation and begs the player to kill the Wizard. The Wizard asks the player to put Mitch out of his misery.",
+      "text_zh": "线索既足，推论初成，法师将与米奇同场直言其真：米奇乃凶手，每夜抹去众人记忆并抹平罪痕。米奇闻之发狂，哀求玩家诛法师；法师亦请玩家解米奇之苦，进退维谷。"
+    },
+    {
+      "id": "B05",
+      "text_en": "The player can decide to handle the situation however they see fit, including killing either Mitch or the Wizard, trying to convince Mitch to stop, or finding another solution entirely.",
+      "text_zh": "结局由玩家自决：或诛米奇，或杀法师，或劝其回头，抑或另寻两全之策，皆听其心之所向。"
+    }
+  ]
+}

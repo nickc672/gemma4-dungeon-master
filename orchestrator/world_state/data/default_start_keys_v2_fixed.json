@@ -1,0 +1,37 @@
+{
+  "version": 2,
+  "meta": {
+    "created_ts": "2026-02-12T22:51:53.728875-05:00",
+    "notes": "DEFAULT_START_KEYS with keys + canonical IDs."
+  },
+  "default_start_keys": [
+    "Town Square",
+    "Market Stalls",
+    "Temple of the Tide",
+    "Town Hall",
+    "Harbor Gate",
+    "Copper Cup",
+    "Bar Counter",
+    "Mara",
+    "Brin",
+    "Edda",
+    "Thom",
+    "Lysa",
+    "Stair Landing"
+  ],
+  "default_start_ids": [
+    "L001",
+    "L002",
+    "L003",
+    "L004",
+    "L005",
+    "L019",
+    "L020",
+    "P026",
+    "P027",
+    "P028",
+    "P029",
+    "P030",
+    "L021"
+  ]
+}

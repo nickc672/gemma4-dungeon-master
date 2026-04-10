@@ -1,0 +1,661 @@
+{
+  "version": 3,
+  "meta": {
+    "created_ts": "2026-02-12T23:19:00.721287-05:00",
+    "notes": "v3: Clues re-numbered to C001..C004 (was I007..I010). All references updated."
+  },
+  "nodes": {
+    "L001": {
+      "name": "Town Square",
+      "source_key": "Town Square",
+      "node_type": "location"
+    },
+    "L002": {
+      "name": "Market Stalls",
+      "source_key": "Market Stalls",
+      "node_type": "location"
+    },
+    "L003": {
+      "name": "Temple of the Tide",
+      "source_key": "Temple of the Tide",
+      "node_type": "location"
+    },
+    "L004": {
+      "name": "Town Hall",
+      "source_key": "Town Hall",
+      "node_type": "location"
+    },
+    "L005": {
+      "name": "Harbor Gate",
+      "source_key": "Harbor Gate",
+      "node_type": "location"
+    },
+    "L006": {
+      "name": "Docks",
+      "source_key": "Docks",
+      "node_type": "location"
+    },
+    "L007": {
+      "name": "Warehouse Row",
+      "source_key": "Warehouse Row",
+      "node_type": "location"
+    },
+    "L008": {
+      "name": "Smuggler's Entrance",
+      "source_key": "Smuggler's Entrance",
+      "node_type": "location"
+    },
+    "L009": {
+      "name": "Old Well",
+      "source_key": "Old Well",
+      "node_type": "location"
+    },
+    "L010": {
+      "name": "Watch Barracks",
+      "source_key": "Watch Barracks",
+      "node_type": "location"
+    },
+    "L011": {
+      "name": "East Alley",
+      "source_key": "East Alley",
+      "node_type": "location"
+    },
+    "L012": {
+      "name": "Back Door - Copper Cup",
+      "source_key": "Back Door - Copper Cup",
+      "node_type": "location"
+    },
+    "L013": {
+      "name": "Old Shrine",
+      "source_key": "Old Shrine",
+      "node_type": "location"
+    },
+    "L014": {
+      "name": "South Bridge",
+      "source_key": "South Bridge",
+      "node_type": "location"
+    },
+    "L015": {
+      "name": "Riverside Path",
+      "source_key": "Riverside Path",
+      "node_type": "location"
+    },
+    "L016": {
+      "name": "Fishermen's Shacks",
+      "source_key": "Fishermen's Shacks",
+      "node_type": "location"
+    },
+    "L017": {
+      "name": "Lumberyard",
+      "source_key": "Lumberyard",
+      "node_type": "location"
+    },
+    "L018": {
+      "name": "Wizard's House",
+      "source_key": "Wizard's House",
+      "node_type": "location"
+    },
+    "L019": {
+      "name": "Copper Cup",
+      "source_key": "Copper Cup",
+      "node_type": "location"
+    },
+    "L020": {
+      "name": "Bar Counter",
+      "source_key": "Bar Counter",
+      "node_type": "location"
+    },
+    "L021": {
+      "name": "Stair Landing",
+      "source_key": "Stair Landing",
+      "node_type": "location"
+    },
+    "L022": {
+      "name": "Storeroom Door",
+      "source_key": "Storeroom Door",
+      "node_type": "location"
+    },
+    "P001": {
+      "name": "Town Crier Jessa",
+      "source_key": "Town Crier Jessa",
+      "node_type": "npc"
+    },
+    "P002": {
+      "name": "Street Performer Jorin",
+      "source_key": "Street Performer Jorin",
+      "node_type": "npc"
+    },
+    "P003": {
+      "name": "Fishmonger Talo",
+      "source_key": "Fishmonger Talo",
+      "node_type": "npc"
+    },
+    "P004": {
+      "name": "Spice Seller Nima",
+      "source_key": "Spice Seller Nima",
+      "node_type": "npc"
+    },
+    "P005": {
+      "name": "Cleric Serah",
+      "source_key": "Cleric Serah",
+      "node_type": "npc"
+    },
+    "P006": {
+      "name": "Novice Arel",
+      "source_key": "Novice Arel",
+      "node_type": "npc"
+    },
+    "P007": {
+      "name": "Mitch",
+      "source_key": "Mitch",
+      "node_type": "npc"
+    },
+    "P008": {
+      "name": "Mayor Elric",
+      "source_key": "Mayor Elric",
+      "node_type": "npc"
+    },
+    "P009": {
+      "name": "Scribe Loth",
+      "source_key": "Scribe Loth",
+      "node_type": "npc"
+    },
+    "P010": {
+      "name": "Gate Guard Ren",
+      "source_key": "Gate Guard Ren",
+      "node_type": "npc"
+    },
+    "P011": {
+      "name": "Dockmaster Hara",
+      "source_key": "Dockmaster Hara",
+      "node_type": "npc"
+    },
+    "P012": {
+      "name": "Deckhand Finn",
+      "source_key": "Deckhand Finn",
+      "node_type": "npc"
+    },
+    "P013": {
+      "name": "Foreman Kesh",
+      "source_key": "Foreman Kesh",
+      "node_type": "npc"
+    },
+    "P014": {
+      "name": "Smuggler Lia",
+      "source_key": "Smuggler Lia",
+      "node_type": "npc"
+    },
+    "P015": {
+      "name": "Old Tellan",
+      "source_key": "Old Tellan",
+      "node_type": "npc"
+    },
+    "P016": {
+      "name": "Captain Varr",
+      "source_key": "Captain Varr",
+      "node_type": "npc"
+    },
+    "P017": {
+      "name": "Street Urchin Pip",
+      "source_key": "Street Urchin Pip",
+      "node_type": "npc"
+    },
+    "P018": {
+      "name": "Fence Caris",
+      "source_key": "Fence Caris",
+      "node_type": "npc"
+    },
+    "P019": {
+      "name": "Cook Brenna",
+      "source_key": "Cook Brenna",
+      "node_type": "npc"
+    },
+    "P020": {
+      "name": "Caretaker Ilya",
+      "source_key": "Caretaker Ilya",
+      "node_type": "npc"
+    },
+    "P021": {
+      "name": "Bridge Watcher Sol",
+      "source_key": "Bridge Watcher Sol",
+      "node_type": "npc"
+    },
+    "P022": {
+      "name": "Boatman Jaro",
+      "source_key": "Boatman Jaro",
+      "node_type": "npc"
+    },
+    "P023": {
+      "name": "Fisher Rian",
+      "source_key": "Fisher Rian",
+      "node_type": "npc"
+    },
+    "P024": {
+      "name": "Fisher Mira",
+      "source_key": "Fisher Mira",
+      "node_type": "npc"
+    },
+    "P025": {
+      "name": "Town Wizard Arlen",
+      "source_key": "Town Wizard Arlen",
+      "node_type": "npc"
+    },
+    "P026": {
+      "name": "Mara",
+      "source_key": "Mara",
+      "node_type": "npc"
+    },
+    "P027": {
+      "name": "Brin",
+      "source_key": "Brin",
+      "node_type": "npc"
+    },
+    "P028": {
+      "name": "Edda",
+      "source_key": "Edda",
+      "node_type": "npc"
+    },
+    "P029": {
+      "name": "Thom",
+      "source_key": "Thom",
+      "node_type": "npc"
+    },
+    "P030": {
+      "name": "Lysa",
+      "source_key": "Lysa",
+      "node_type": "npc"
+    },
+    "I001": {
+      "name": "Bronze Fountain Coin",
+      "source_key": "Bronze Fountain Coin",
+      "node_type": "item"
+    },
+    "I002": {
+      "name": "Salt-Stained Prayer Beads",
+      "source_key": "Salt-Stained Prayer Beads",
+      "node_type": "item"
+    },
+    "I004": {
+      "name": "Cracked Spyglass",
+      "source_key": "Cracked Spyglass",
+      "node_type": "item"
+    },
+    "I007": {
+      "name": "Guard's Lost Signet",
+      "source_key": "Guard's Lost Signet",
+      "node_type": "item"
+    },
+    "I008": {
+      "name": "Hidden Alley Knife",
+      "source_key": "Hidden Alley Knife",
+      "node_type": "item"
+    },
+    "I009": {
+      "name": "Carved Driftwood Charm",
+      "source_key": "Carved Driftwood Charm",
+      "node_type": "item"
+    },
+    "C001": {
+      "name": "Weathered Notice",
+      "source_key": "Weathered Notice",
+      "node_type": "clue"
+    },
+    "C002": {
+      "name": "Frayed Mooring Rope",
+      "source_key": "Frayed Mooring Rope",
+      "node_type": "clue"
+    },
+    "C003": {
+      "name": "Smugglers' Ledger",
+      "source_key": "Smugglers' Ledger",
+      "node_type": "clue"
+    },
+    "C004": {
+      "name": "Hidden Scrap",
+      "source_key": "Hidden Scrap",
+      "node_type": "clue"
+    }
+  },
+  "edges": {
+    "L001": [
+      "L002",
+      "L003",
+      "L004",
+      "L005",
+      "L010",
+      "L009",
+      "L011",
+      "L014",
+      "L019",
+      "L018",
+      "I001",
+      "I007"
+    ],
+    "C001": [
+      "L004",
+      "L001",
+      "L009"
+    ],
+    "P001": [
+      "L001",
+      "L004"
+    ],
+    "P002": [
+      "L001",
+      "L002"
+    ],
+    "L002": [
+      "L001",
+      "L005",
+      "L009",
+      "P003",
+      "P004"
+    ],
+    "P003": [
+      "L002",
+      "L006"
+    ],
+    "P004": [
+      "L002",
+      "L019"
+    ],
+    "L003": [
+      "L001",
+      "P005",
+      "L013",
+      "P006",
+      "C002",
+      "I002"
+    ],
+    "P005": [
+      "L003",
+      "L009",
+      "C002",
+      "I002"
+    ],
+    "P006": [
+      "L003",
+      "L013",
+      "C002",
+      "I002"
+    ],
+    "C002": [
+      "L006",
+      "P012"
+    ],
+    "L004": [
+      "L001",
+      "P008",
+      "L010",
+      "P009",
+      "C001"
+    ],
+    "P007": [
+      "L001",
+      "L017",
+      "P008"
+    ],
+    "L017": [
+      "P007",
+      "L015"
+    ],
+    "P008": [
+      "L004",
+      "L001",
+      "P007",
+      "P025"
+    ],
+    "P009": [
+      "L004",
+      "L001",
+      "C001"
+    ],
+    "L005": [
+      "L001",
+      "L006",
+      "L010",
+      "L002",
+      "P010",
+      "C003",
+      "I004"
+    ],
+    "P010": [
+      "L005",
+      "L010",
+      "C003",
+      "I004"
+    ],
+    "C003": [
+      "L007",
+      "L008",
+      "P014",
+      "P013"
+    ],
+    "L006": [
+      "L005",
+      "L007",
+      "L016",
+      "P011",
+      "P012",
+      "C002",
+      "I004"
+    ],
+    "P011": [
+      "L006",
+      "L007"
+    ],
+    "P012": [
+      "L006",
+      "L016",
+      "C002"
+    ],
+    "L007": [
+      "L006",
+      "L008",
+      "P013",
+      "C003"
+    ],
+    "P013": [
+      "L007",
+      "L008",
+      "C003"
+    ],
+    "L008": [
+      "L007",
+      "L009",
+      "P014"
+    ],
+    "P014": [
+      "L008",
+      "L007",
+      "C003"
+    ],
+    "L009": [
+      "L001",
+      "L008",
+      "L003",
+      "L002",
+      "P015"
+    ],
+    "P015": [
+      "L009",
+      "L001"
+    ],
+    "L010": [
+      "L001",
+      "L005",
+      "P029",
+      "P016",
+      "C004",
+      "I007"
+    ],
+    "P016": [
+      "L010",
+      "L005",
+      "C004",
+      "I007"
+    ],
+    "C004": [
+      "L020",
+      "L022",
+      "P026",
+      "P027"
+    ],
+    "L011": [
+      "L001",
+      "L012",
+      "L013",
+      "P017",
+      "P018",
+      "I008"
+    ],
+    "P017": [
+      "L011",
+      "L001"
+    ],
+    "P018": [
+      "L011",
+      "L012",
+      "I008"
+    ],
+    "I008": [
+      "L011",
+      "P018"
+    ],
+    "L012": [
+      "L011",
+      "L019",
+      "L022",
+      "P019"
+    ],
+    "P019": [
+      "L012",
+      "L019"
+    ],
+    "L013": [
+      "L011",
+      "L003",
+      "P020",
+      "I009"
+    ],
+    "P020": [
+      "L013",
+      "L003",
+      "I009"
+    ],
+    "I009": [
+      "L013",
+      "L003"
+    ],
+    "L014": [
+      "L001",
+      "L015",
+      "P021"
+    ],
+    "P021": [
+      "L014",
+      "L015"
+    ],
+    "L015": [
+      "L014",
+      "L016",
+      "P022"
+    ],
+    "P022": [
+      "L015",
+      "L016"
+    ],
+    "L016": [
+      "L015",
+      "L006",
+      "P023",
+      "P024"
+    ],
+    "P023": [
+      "L016",
+      "L006"
+    ],
+    "P024": [
+      "L016",
+      "L015"
+    ],
+    "L018": [
+      "L001",
+      "P025",
+      "L010"
+    ],
+    "P025": [
+      "L018",
+      "P008"
+    ],
+    "L019": [
+      "L020",
+      "P026",
+      "P027",
+      "P028",
+      "P029",
+      "P030",
+      "L021"
+    ],
+    "L020": [
+      "P026",
+      "C004",
+      "L019"
+    ],
+    "P026": [
+      "L020",
+      "C004",
+      "L022",
+      "P027"
+    ],
+    "P027": [
+      "L019",
+      "L021",
+      "L022",
+      "P026"
+    ],
+    "P028": [
+      "L019",
+      "C004",
+      "L022"
+    ],
+    "P029": [
+      "L019",
+      "L021",
+      "L022"
+    ],
+    "P030": [
+      "L019",
+      "C004",
+      "L022"
+    ],
+    "L021": [
+      "L019",
+      "P029",
+      "L022"
+    ],
+    "L022": [
+      "C004",
+      "P026",
+      "L021"
+    ],
+    "I001": [
+      "L001"
+    ],
+    "I002": [
+      "L003",
+      "P005",
+      "P006"
+    ],
+    "I004": [
+      "L005",
+      "P010",
+      "L006"
+    ],
+    "I007": [
+      "L010",
+      "L001",
+      "P016"
+    ]
+  }
+}

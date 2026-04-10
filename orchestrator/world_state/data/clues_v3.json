@@ -1,0 +1,29 @@
+{
+  "version": 3,
+  "meta": {
+    "created_ts": "2026-02-12T23:19:00.721287-05:00",
+    "notes": "Clues only. IDs re-numbered to C001..C004; graph/story_index updated accordingly."
+  },
+  "clues": {
+    "C001": {
+      "name": "Weathered Notice",
+      "desc_zh": "告示卷翘，雨洗墨晕；其文提及古井旁异光时现，募人证赴市政厅禀报，字里行间，欲盖弥彰。",
+      "desc_en": "A curling parchment tacked to the town hall board, ink blurred by rain. It mentions strange lights near the old well and requests witnesses to report to the mayor's office."
+    },
+    "C002": {
+      "name": "Frayed Mooring Rope",
+      "desc_zh": "系船之绳一端色泽深沉如渍；细察纤维，不似风浪磨损，倒像刀痕所断，颇有蹊跷。",
+      "desc_en": "A length of mooring rope stained a darker color near one end. Up close, the fibers look as though they were cut more than worn through by the sea."
+    },
+    "C003": {
+      "name": "Smugglers' Ledger",
+      "desc_zh": "皮装薄册，页页皆以暗码记载货物、路线与姓名缩写；数处沾泥如河淤，愈显其来路不正。",
+      "desc_en": "A slim ledger bound in cracked leather, its pages filled with coded notes about shipments, routes, and initials. A few entries are smudged with what looks like river-mud."
+    },
+    "C004": {
+      "name": "Hidden Scrap",
+      "desc_zh": "油渍纸条藏于松动木箱之后，其上寥寥数语：『地下室补货／楼上锁码乃我二人结发纪念之日』，暗示机关所在。",
+      "desc_en": "A grease-stained note tucked behind a loose crate: 'cellar restock / upstairs lock is our wedding anniversary date'."
+    }
+  }
+}
