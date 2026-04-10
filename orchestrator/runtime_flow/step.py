@@ -171,28 +171,6 @@ def parse_sections(text: str, tags: set[str]) -> Dict[str, str]:
 # Step-Specific Parsers
 # =========================
 
-def parse_intent(sections: Dict[str, str]) -> Dict[str, Any]:
-    action = sections.get("action", "").strip().lower()
-
-    valid_actions = {"move", "talk", "inspect", "take", "use", "wait", "attack", "meta_question", "other"}
-    action_category = action if action in valid_actions else "other"
-    if not action:
-        action = "other"
-
-    targets_raw = sections.get("targets", "").strip()
-    targets = [t.strip() for t in targets_raw.split(",") if t.strip() and t.strip().lower() not in {"none", "empty", ""}]
-
-    return {
-        "action": action,
-        "action_category": action_category,
-        "targets": targets,
-    }
-
-
-def parse_status(sections: Dict[str, str]) -> str:
-    return sections.get("status", "").strip()
-
-
 def parse_narrative(sections: Dict[str, str]) -> str:
     return sections.get("narrative", "").strip()
 
@@ -200,17 +178,6 @@ def parse_narrative(sections: Dict[str, str]) -> str:
 # =========================
 # Validators
 # =========================
-
-def validate_validation_step(sections: Dict[str, str]) -> None:
-    verdict = sections.get("verdict", "").lower()
-    advance = sections.get("advance", "").lower()
-
-    if verdict not in {"approve", "revise"}:
-        raise ValueError("Verdict must be approve or revise.")
-
-    if not (advance.startswith("y") or advance.startswith("n")):
-        raise ValueError("Advance must be yes or no.")
-
 
 def validate_narration_step(sections: Dict[str, str]) -> None:
     """
@@ -267,9 +234,6 @@ def validate_narration_step(sections: Dict[str, str]) -> None:
 
 __all__ = [
     "LLMStep",
-    "parse_intent",
-    "parse_status",
     "parse_narrative",
-    "validate_validation_step",
     "validate_narration_step",
 ]

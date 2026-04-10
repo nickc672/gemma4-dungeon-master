@@ -12,7 +12,6 @@ from .step_registry import build_steps
 from ..llm_interaction.prompt_builders import (
     PromptState,
     build_intro_prompt,
-    build_intent_prompt,
     build_intent_phase_prompt,
     build_mechanics_phase_prompt,
     build_narrate_prompt,
@@ -169,7 +168,7 @@ class StoryEngine:
 
     # -----------------------
 
-    def _make_state(self, player_input, intent):
+    def _make_state(self, player_input):
         def apply_relevant_flags(key: str, info: Dict[str, str]) -> Dict[str, str]:
             relevant_flags = {
                 flag: val
@@ -245,7 +244,6 @@ class StoryEngine:
             beat_guide=", ".join(self.beats.beats),
             story_status=self.story_status,
             session_summary=self.summary.text(),
-            intent=intent,
             player_input=player_input,
             current_location=current_location,
             scene_description=str(scene.get("description") or "Unknown location"),
@@ -262,27 +260,10 @@ class StoryEngine:
         trace = {} if self.adapter.verbose else None
 
         # -----------------------
-        # INTENT PARSER (kept from original pipeline)
-        # -----------------------
-
-        intent_prompt = build_intent_prompt(
-            self.history.as_text(limit=6),
-            player_input,
-        )
-
-        intent, intent_debug = self.steps["intent"].run(
-            self.adapter,
-            intent_prompt,
-        )
-
-        if trace is not None:
-            trace["INTENT_PARSE"] = intent_debug
-
-        # -----------------------
         # BUILD STATE SNAPSHOT
         # -----------------------
 
-        state = self._make_state(player_input, intent)
+        state = self._make_state(player_input)
         def build_state_snapshot():
             scene = self.world.scene_snapshot(self.game_state.player_location)
             return {
@@ -557,12 +538,7 @@ class StoryEngine:
 
         if not turn_ctx["todo"]:
             fallback_lines: list[str] = []
-            action = str(intent.get("action_category") or intent.get("action") or "other").lower()
-            targets = list(intent.get("targets") or [])
-            if action == "move" and targets:
-                fallback_lines.append(f"Attempt movement to {targets[0]} if it is reachable from the current location.")
-            else:
-                fallback_lines.append(f"Resolve the player's declared action in context: {player_input}")
+            fallback_lines.append(f"Resolve the player's declared action in context: {player_input}")
             fallback_summary = turn_ctx["intent_summary"] or f"Resolve player action '{player_input}' with grounded mechanics/state checks."
             execute_world_tool(
                 "set_turn_todo",
@@ -637,7 +613,7 @@ class StoryEngine:
             print(f"[STATE] Scene actors: {state.scene_actors}")
             print(f"[STATE] Scene items: {state.scene_items}")
 
-        state = self._make_state(player_input, intent)
+        state = self._make_state(player_input)
 
         if trace is not None:
             trace["STATE_AFTER_ACTION"] = build_state_snapshot()
@@ -675,7 +651,6 @@ class StoryEngine:
         result = {
             "turn": self.turn_index,
             "narration": {"ic": narrative},
-            "intent": intent,
             "beat": self.beats.current(),
             "player_location": self.game_state.player_location,
             "scene": self.world.scene_snapshot(self.game_state.player_location),
@@ -728,7 +703,6 @@ class StoryEngine:
             beat_guide=", ".join(self.beats.beats),
             story_status=self.story_status,
             session_summary=self.summary.text(),
-            intent={},
             player_input="",
             current_location=self.game_state.player_location,
             scene_description=str(intro_scene.get("description") or "Unknown location"),

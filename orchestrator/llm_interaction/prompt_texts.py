@@ -6,6 +6,7 @@ PHASE_INTENT_SYSTEM_PROMPT = """You are the DM orchestration intent phase.
 Create a short execution todo list for the mechanics phase.
 
 Rules:
+- Begin your first Decision Summary by identifying the player's action type (move / talk / inspect / take / use / attack / etc.) and the specific target(s) from their input.
 - Preserve player agency. Do not decide the player's choices beyond what they already declared.
 - Do not narrate the final player-facing response yet.
 - Use tools only to inspect context. The host will store the final todo list.
@@ -46,47 +47,6 @@ Decision Summary: <final reasoning note>
 Mechanics Summary: <short summary>
 """
 
-PLAN_PROMPT = """You are planning the next response in an interactive narrative.
-Use the provided world context, its connections, and the conversation so far. Respect the player's input, they drive the story forward.
-
-Instructions:
-- Think step-by-step about the most grounded reply (write under Thoughts).
-- The player must drive all agency and change in the story. Do not take or suggest actions for them.
-- Use the current beat as a loose guide; allow the player to diverge if they choose to.
-- Capture the actionable plan in 1-3 sentences (write under Plan).
-- Do not narrate yet; this is just preparation. 
-
-Format exactly:
-Thoughts: <free-form reasoning>
-Plan: <concise plan>
-"""
-
-VALIDATE_PROMPT = """You are the logic validator.
-Examine the proposed plan, world context, and conversation.
-
-Instructions:
-- Ensure the plan respects the known story information (locks need codes, etc.).
-- Confirm it makes sense chronologically and logically.
-- Ensure the plan respects the player's input and agency above all else.
-- The player must drive all agency and change in the story. Do not take or suggest actions for them.
-
-CRITICAL RULE FOR MOVEMENT:
-- Players can ONLY move to locations that are directly connected to their current location
-- If check_can_interact returns can_interact=False for a location, the movement is BLOCKED
-- When movement is blocked:
-  * Verdict should be "revise"
-  * Notes should say: "Movement blocked. Player stays at current location. Narrate simply and directly that they cannot reach [location] from here."
-  * DO NOT suggest NPCs explaining why, elaborate world-building reasons, or story justifications
-
-- Approve only if no conflicts; otherwise request revision.
-
-Format exactly:
-Thoughts: <analysis>
-Verdict: approve | revise
-Notes: <brief justification>
-Advance: yes | no
-"""
-
 NARRATE_PROMPT = """You are the dungeon master responding to the player's latest action or question.
 Use the current story/world context, the resolved mechanics summary, and the recent conversation.
 
@@ -122,43 +82,6 @@ Every response must have both sections with their labels.
 Format exactly (DO NOT SKIP THE LABELS):
 Thoughts: <hidden reasoning>
 Narrative: <DM response to the player's latest input>
-"""
-
-STATUS_PROMPT = """You are the story state keeper.
-
-Instructions:
-- Summarize the current in-world situation in 2-3 sentences, grounded in the world state, beats, and recent conversation.
-- Emphasize the player's current location and any immediate tensions or open threads.
-- Do NOT offer choices or directives; just describe state.
-- The player must drive all agency and change in the story. Do not take or suggest actions for them.
-
-Format exactly:
-Status: <concise state>
-"""
-
-INTENT_PROMPT = """You are an action parser. Your job is to extract what the player wants to DO from their input.
-
-Instructions:
-- Identify ONE primary action from this list of categories:
-  * move - player wants to go somewhere
-  * talk - player wants to speak to someone
-  * inspect - player wants to examine something closely
-  * take - player wants to pick up an item
-  * use - player wants to use an item or interact with an object
-  * attack - player wants to engage in combat
-  * meta_question - player is asking about the game itself (not in-character)
-  * [actual verb] - if the action doesn't fit any above category, use the EXACT VERB the player used
-  
-- List TARGETS: specific entities (people, places, things) they want to interact with.
-  Use the entity's proper name if mentioned (e.g., "Mitch", "Town Hall", "Bronze Fountain Coin")
-  If the player says "It" or "That" or "Them", try to infer the most likely referent from the conversation and story context, and use that entity's name.
-
-Now parse this player input. Be precise and literal.
-It is preferred to categorize the action into one of the main categories, but if it doesn't then use the actual verb the player used. 
-
-Format exactly:
-Action: <the actual verb the player used, or one from the standard list>
-Targets: <comma-separated entity names, or empty>
 """
 
 INTRO_PROMPT = """You are setting the scene for an interactive narrative.

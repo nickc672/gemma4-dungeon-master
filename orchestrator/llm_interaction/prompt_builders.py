@@ -15,7 +15,6 @@ class PromptState:
     beat_guide: str
     story_status: str
     session_summary: str
-    intent: Dict[str, Any]
     player_input: str
     current_location: str
     scene_description: str
@@ -24,19 +23,6 @@ class PromptState:
     scene_items: List[str] = field(default_factory=list)
     entity_info: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
-
-def _format_intent(intent: Dict[str, Any]) -> str:
-    action = intent.get("action") or ""
-    action_category = intent.get("action_category") or ""
-    targets = ", ".join(intent.get("targets") or [])
-    category_line = ""
-    if action_category and action_category != action:
-        category_line = f"\nAction_Category: {action_category}"
-    return (
-        f"Action: {action}"
-        f"{category_line}"
-        f"\nTargets: {targets or 'None'}"
-    )
 
 
 def _recent_history(history_text: str, limit_lines: int = 4) -> str:
@@ -84,49 +70,10 @@ def _entity_info_block(state: PromptState) -> str:
     return "\n".join(lines)
 
 
-def build_intent_prompt(history_text: str, player_input: str) -> str:
-    return textwrap.dedent(
-        f"""
-        # Recent Conversation
-        {history_text or 'No prior conversation.'}
-
-        # Player Input
-        {player_input}
-        """
-    ).strip()
-
-
-def build_plan_prompt(state: PromptState) -> str:
-    return textwrap.dedent(
-        f"""
-        # Intent
-        {_format_intent(state.intent)}
-
-        # Beat (background pacing only; do not force advancement)
-        Current: {state.beat_current}
-        Next: {state.beat_next}
-        Guide: {state.beat_guide}
-
-        # Current Scene
-        {_scene_snapshot_block(state)}
-        Status: {state.story_status or 'Not set'}
-        Session Summary: {state.session_summary or 'None'}
-
-        # Recent Conversation
-        {state.history_text or 'No prior conversation.'}
-
-        # Player Input
-        {state.player_input}
-        """
-    ).strip()
-
-
 def build_intent_phase_prompt(state: PromptState) -> str:
     return (
         f"# Player Request\n"
         f"{state.player_input}\n\n"
-        f"# Parsed Intent\n"
-        f"{_format_intent(state.intent)}\n\n"
         f"# Current Scene\n"
         f"{_scene_snapshot_block(state)}\n\n"
         f"# Session Recap\n"
@@ -134,37 +81,6 @@ def build_intent_phase_prompt(state: PromptState) -> str:
         f"# Recent Conversation\n"
         f"{_recent_history(state.history_text)}"
     )
-
-
-def build_validate_prompt(state: PromptState, plan: str) -> str:
-    return textwrap.dedent(
-        f"""
-        # Intent
-        {_format_intent(state.intent)}
-
-        # Beat
-        Current: {state.beat_current}
-        Next: {state.beat_next}
-        Guide: {state.beat_guide}
-
-        # Current Scene
-        {_scene_snapshot_block(state)}
-        Status: {state.story_status or 'Not set'}
-        Session Summary: {state.session_summary or 'None'}
-
-        # Recent Conversation
-        {state.history_text or 'No prior conversation.'}
-
-        # Player Input
-        {state.player_input}
-
-        # Entity Information
-        {_entity_info_block(state)}
-
-        # Proposed Plan
-        {plan}
-        """
-    ).strip()
 
 
 def build_narrate_prompt(
@@ -222,8 +138,6 @@ def build_mechanics_phase_prompt(
     return (
         f"# Player Request\n"
         f"{state.player_input}\n\n"
-        f"# Parsed Intent\n"
-        f"{_format_intent(state.intent)}\n\n"
         f"# Current Scene\n"
         f"{_scene_snapshot_block(state)}\n\n"
         f"# Intent Summary\n"
@@ -233,27 +147,6 @@ def build_mechanics_phase_prompt(
         f"# Session Recap\n"
         f"{_latest_recap(state.session_summary)}"
     )
-
-
-def build_status_prompt(state: PromptState) -> str:
-    return textwrap.dedent(
-        f"""
-        Current Location:
-        {state.current_location or 'Unknown'}
-
-        Current Scene:
-        {_scene_snapshot_block(state)}
-
-        Beat:
-        {state.beat_current}
-
-        Session Summary:
-        {state.session_summary or 'None'}
-
-        Conversation So Far:
-        {state.history_text or 'No prior conversation.'}
-        """
-    ).strip()
 
 
 def build_intro_prompt(state: PromptState) -> str:
