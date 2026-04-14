@@ -2,9 +2,9 @@ from typing import Any, Dict, Sequence, Optional, List, Callable
 from .conversation_log import History
 from ..llm_interaction.adapter import LLMAdapter
 from ..app_config import (
-    get_ollama_default_model,
-    get_ollama_default_options,
-    get_ollama_stage_options,
+    get_active_model,
+    get_active_default_options,
+    get_active_stage_options,
     get_roll_mode,
 )
 from .session_state import BeatTracker, SessionSummary, SnapshotBuilder
@@ -153,14 +153,13 @@ class StoryEngine:
         if self.roll_mode == "manual" and not callable(self.manual_roll_provider):
             self.roll_mode = "auto"
 
-        resolved_model = model or get_ollama_default_model()
+        resolved_model = model or get_active_model()
 
         self.adapter = LLMAdapter(
             model=resolved_model,
-            default_options=get_ollama_default_options(),
-            stage_options=get_ollama_stage_options(),
+            default_options=get_active_default_options(),
+            stage_options=get_active_stage_options(),
             verbose=verbose,
-            # force_retry_stage="plan"
         )
 
         self.steps = build_steps()

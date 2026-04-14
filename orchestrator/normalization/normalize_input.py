@@ -108,16 +108,17 @@ class InputNormalizer:
         self._build_concept_synonym_index()
 
     @classmethod
-    def for_story(
+    def for_world_model(
         cls,
-        story: "StoryGraph",
+        world: "WorldModel",
         *,
         lexicon_path: Optional[Path] = None,
         synonym_path: Optional[Path] = None,
         synonym_top_n: int = 20,
         max_phrase_tokens: int = 5,
     ) -> "InputNormalizer":
-        lexicon = Lexicon.from_story(story, lexicon_path=lexicon_path)
+        from orchestrator.normalization.lexicon import Lexicon
+        lexicon = Lexicon.from_world_model(world, lexicon_path=lexicon_path)
         synonym_store = SynonymStore.from_json_path(synonym_path)
         return cls(
             lexicon,

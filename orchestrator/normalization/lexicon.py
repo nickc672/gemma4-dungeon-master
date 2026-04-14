@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 if False:  # pragma: no cover
-    from orchestrator.story import StoryGraph
+    from orchestrator.world_state.world_model import WorldModel
 
 
 @dataclass(frozen=True)
@@ -61,37 +61,24 @@ class Lexicon:
         return cls(concepts=sorted(concepts, key=lambda c: c.concept_id))
 
     @classmethod
-    def from_story(
+    def from_world_model(
         cls,
-        story: "StoryGraph",
+        world: "WorldModel",
         *,
         lexicon_path: Optional[Path] = None,
     ) -> "Lexicon":
+        """Build a Lexicon from a WorldModel instance plus the external lexicon JSON."""
         external = load_lexicon_data(lexicon_path)
         records: List[LexiconRecord] = []
 
-        for node_key in sorted(story.by_key):
-            concept_type = infer_story_concept_type(node_key)
-            concept_id = make_concept_id(concept_type, node_key)
-            records.append(
-                LexiconRecord(
-                    concept_type=concept_type,
-                    concept_id=concept_id,
-                    canonical_text=node_key,
-                    aliases=[],
-                )
-            )
-
-        for alias, canonical in sorted(getattr(story, "_ALIASES", {}).items()):
-            concept_type = infer_story_concept_type(canonical)
-            records.append(
-                LexiconRecord(
-                    concept_type=concept_type,
-                    concept_id=make_concept_id(concept_type, canonical),
-                    canonical_text=canonical,
-                    aliases=[alias],
-                )
-            )
+        for key in sorted(world.all_keys()):
+            concept_type = world.key_kind(key) or infer_story_concept_type(key)
+            records.append(LexiconRecord(
+                concept_type=concept_type,
+                concept_id=make_concept_id(concept_type, key),
+                canonical_text=key,
+                aliases=[],
+            ))
 
         for item in external.get("actions", []):
             rec = _record_from_external(item, fallback_type="action")
@@ -108,26 +95,7 @@ class Lexicon:
             if rec:
                 records.append(rec)
 
-        merged: Dict[str, LexiconRecord] = {}
-        for rec in records:
-            existing = merged.get(rec.concept_id)
-            if existing:
-                aliases = _dedupe_preserve([*existing.aliases, *rec.aliases, rec.canonical_text])
-                merged[rec.concept_id] = LexiconRecord(
-                    concept_type=existing.concept_type,
-                    concept_id=existing.concept_id,
-                    canonical_text=existing.canonical_text,
-                    aliases=aliases,
-                )
-            else:
-                merged[rec.concept_id] = LexiconRecord(
-                    concept_type=rec.concept_type,
-                    concept_id=rec.concept_id,
-                    canonical_text=rec.canonical_text,
-                    aliases=_dedupe_preserve([*rec.aliases, rec.canonical_text]),
-                )
-
-        return cls.from_records(list(merged.values()))
+        return cls.from_records(_merge_records(records))
 
 
 def tokenize_with_spans(text: str) -> List[Dict[str, object]]:
@@ -281,6 +249,29 @@ def _dedupe_preserve(values: Iterable[str]) -> List[str]:
         seen.add(key)
         out.append(cleaned)
     return out
+
+
+def _merge_records(records: List[LexiconRecord]) -> List[LexiconRecord]:
+    """Deduplicate records by concept_id, merging aliases."""
+    merged: Dict[str, LexiconRecord] = {}
+    for rec in records:
+        existing = merged.get(rec.concept_id)
+        if existing:
+            aliases = _dedupe_preserve([*existing.aliases, *rec.aliases, rec.canonical_text])
+            merged[rec.concept_id] = LexiconRecord(
+                concept_type=existing.concept_type,
+                concept_id=existing.concept_id,
+                canonical_text=existing.canonical_text,
+                aliases=aliases,
+            )
+        else:
+            merged[rec.concept_id] = LexiconRecord(
+                concept_type=rec.concept_type,
+                concept_id=rec.concept_id,
+                canonical_text=rec.canonical_text,
+                aliases=_dedupe_preserve([*rec.aliases, rec.canonical_text]),
+            )
+    return list(merged.values())
 
 
 def _record_from_external(item: object, *, fallback_type: str) -> Optional[LexiconRecord]:

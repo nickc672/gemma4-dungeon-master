@@ -1,4 +1,5 @@
 {
+  "provider": "ollama",
   "ollama": {
     "default_model": "llama3.1:8b",
     "model_choices": [
@@ -20,6 +21,43 @@
         "repeat_penalty": 1.15,
         "top_k": 50,
         "min_p": 0.05
+      }
+    }
+  },
+  "openai": {
+    "default_model": "gpt-4o",
+    "model_choices": [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "o3"
+    ],
+    "api_key_env": "OPENAI_API_KEY",
+    "default_options": {
+      "temperature": 0.2,
+      "max_tokens": 8192
+    },
+    "stage_options": {
+      "narrate": {
+        "temperature": 0.75
+      }
+    }
+  },
+  "anthropic": {
+    "default_model": "claude-sonnet-4-6",
+    "model_choices": [
+      "claude-opus-4-6",
+      "claude-sonnet-4-6",
+      "claude-haiku-4-5-20251001"
+    ],
+    "api_key_env": "ANTHROPIC_API_KEY",
+    "default_options": {
+      "temperature": 0.2,
+      "max_tokens": 8192
+    },
+    "stage_options": {
+      "narrate": {
+        "temperature": 0.75,
+        "max_tokens": 4096
       }
     }
   },

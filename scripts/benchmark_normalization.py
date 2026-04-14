@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from orchestrator.normalization.normalize_input import InputNormalizer
-from orchestrator.story import StoryGraph
+from orchestrator.world_state.world_model import build_world_model
 
 
 SAMPLE_INPUTS = [
@@ -41,7 +41,7 @@ def percentile(values: List[float], p: float) -> float:
 
 
 def run_benchmark(top_n: int, rounds: int) -> dict:
-    normalizer = InputNormalizer.for_story(StoryGraph(), synonym_top_n=top_n)
+    normalizer = InputNormalizer.for_world_model(build_world_model(), synonym_top_n=top_n)
 
     # warm cache
     for text in SAMPLE_INPUTS:

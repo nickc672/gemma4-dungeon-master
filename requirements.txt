@@ -10,6 +10,8 @@ faiss-cpu>=1.8.0,<2
 mcp==1.26.0
 numpy>=1.26,<3
 ollama==0.6.1
+openai>=1.30.0        # OpenAI provider (set OPENAI_API_KEY to use)
+anthropic>=0.30.0     # Anthropic provider (set ANTHROPIC_API_KEY to use)
 psycopg==3.3.2
 pydantic==2.12.5
 pytest==9.0.2
