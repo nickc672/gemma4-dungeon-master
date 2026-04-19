@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 from typing import Any
@@ -29,6 +30,7 @@ ENGINE_ERROR_MESSAGE = "The Dungeon Master is unavailable right now."
 class SessionConfig:
     provider: str
     model: str
+    api_key: str
     starting_location: str
     starting_state: str
     roll_mode: str
@@ -36,6 +38,8 @@ class SessionConfig:
     def reset_signature(self) -> str:
         return "|".join(
             [
+                self.provider.strip().lower(),
+                self.api_key.strip(),
                 self.starting_location.strip(),
                 self.starting_state.strip(),
                 self.roll_mode.strip().lower(),
@@ -175,6 +179,7 @@ def initialize_session(config: SessionConfig) -> None:
     engine = StoryEngine(
         provider=config.provider,
         model=config.model,
+        api_key=config.api_key or None,
         starting_location=config.starting_location,
         starting_state=config.starting_state,
         roll_mode=config.roll_mode,
@@ -236,6 +241,22 @@ def build_sidebar(world_defaults: WorldModel) -> tuple[SessionConfig, DisplayOpt
             key="provider_input",
         ) or default_provider
 
+        _env_key_names = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
+        api_key = ""
+        if provider in _env_key_names:
+            env_var = _env_key_names[provider]
+            env_key = os.environ.get(env_var, "")
+            key_input = st.text_input(
+                f"{provider.capitalize()} API Key",
+                value=st.session_state.get(f"{provider}_api_key_input", env_key),
+                type="password",
+                key=f"{provider}_api_key_input",
+                placeholder=f"Loaded from {env_var}" if env_key else f"Paste your {env_var} here",
+            )
+            api_key = key_input.strip()
+            if not api_key and not env_key:
+                st.warning(f"No API key found. Set {env_var} or enter a key above.")
+
         model_choices = get_model_choices(provider)
         default_m = get_default_model(provider) if provider != "ollama" else get_ollama_default_model()
         selected_model = st.session_state.get("model_input", default_m)
@@ -286,6 +307,7 @@ def build_sidebar(world_defaults: WorldModel) -> tuple[SessionConfig, DisplayOpt
     config = SessionConfig(
         provider=str(provider or default_provider).strip().lower(),
         model=str(model or "").strip(),
+        api_key=api_key,
         starting_location=str(starting_location or "").strip(),
         starting_state=str(starting_state or "").strip(),
         roll_mode=str(roll_mode or "auto").strip().lower(),

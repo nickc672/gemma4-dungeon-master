@@ -107,6 +107,7 @@ class StoryEngine:
         *,
         provider: Optional[str] = None,
         model: Optional[str] = None,
+        api_key: Optional[str] = None,
         world_model: Optional[WorldModel] = None,
         world_model_data_dir: Optional[str] = None,
         starting_location: Optional[str] = None,
@@ -161,7 +162,10 @@ class StoryEngine:
         from ..app_config import get_provider_config
         from ..llm_interaction.providers.factory import create_provider
 
-        llm_provider = create_provider(resolved_provider, get_provider_config(resolved_provider))
+        provider_config = dict(get_provider_config(resolved_provider))
+        if api_key:
+            provider_config["api_key"] = api_key
+        llm_provider = create_provider(resolved_provider, provider_config)
 
         self.adapter = LLMAdapter(
             model=resolved_model,
