@@ -4,6 +4,41 @@ The Dungeon Masters Companion is a proposed structure for creating a MCP-powered
 ## Quickstart
 - Default demo (built-in tavern nodes): `python -m orchestrator.cli`
 - Add `--verbose` to see planner/validator prompts, and `--starting-state` if you want to override the default opening.
+- Streamlit UI: `streamlit run streamlit_app.py`
+
+## LLM Providers
+
+The orchestrator supports three provider backends configured in `orchestrator/app_config.json`:
+
+| Provider | How to use |
+|---|---|
+| `ollama` (default) | Run Ollama locally; no API key needed |
+| `openai` | Set `OPENAI_API_KEY` env var |
+| `anthropic` | Set `ANTHROPIC_API_KEY` env var |
+
+Switch providers at the command line:
+```bash
+python -m orchestrator.cli --provider ollama --model llama3.1:8b
+python -m orchestrator.cli --provider openai --model gpt-4o
+python -m orchestrator.cli --provider anthropic --model claude-sonnet-4-6
+```
+
+Or change the default in `orchestrator/app_config.json`:
+```json
+{ "llm": { "default_provider": "anthropic" } }
+```
+
+The Streamlit UI exposes a provider dropdown in the sidebar — no config file edits needed.
+
+## Agent Loop Architecture
+
+Each turn follows a staged REACT-style loop (Intent → Mechanics → Narrate):
+
+1. **Intent phase** — read-only world tools; produces a short todo list.
+2. **Mechanics phase** — executes world state tools (movement, dice, memory); resolves the todo list.
+3. **Narrate phase** — generates final prose from resolved mechanics.
+
+The loop is implemented in `orchestrator/llm_interaction/agent_loop.py` and is provider-agnostic — the same loop runs regardless of which backend is selected.
 
 ## Offline Frequency + Synonyms (wordfreq + WordNet)
 This repo now includes `orchestrator/lexicon.py`, an offline-capable API for English frequency and synonyms.
@@ -60,7 +95,7 @@ Update `orchestrator/data/normalization_lexicon.json`:
 - Add action aliases under `actions` with `concept_id`, `canonical_text`, and `aliases`.
 - Add DnD-style ability concepts under `abilities`.
 - Add entity aliases under `entities` with `canonical_text`, `concept_type`, and `aliases`.
-- Existing story aliases in `StoryGraph._ALIASES` are also ingested automatically.
+- World entity/location/item keys from the loaded `WorldModel` are ingested automatically.
 
 ### Building A New Synonym Store
 You can regenerate a ranked store from WordNet/frequency data and write it to disk:

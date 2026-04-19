@@ -6,12 +6,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
-from .app_config import get_ollama_default_model, get_roll_mode
+from .app_config import get_default_model, get_default_provider, get_provider_names, get_roll_mode
 from .runtime_flow.pipeline import StoryEngine
 from .world_state.tool_runtime import save_runtime_world_checkpoint, set_world_checkpoint_root
 from .world_state.world_model import build_world_model
 
-DEFAULT_MODEL = get_ollama_default_model()
+DEFAULT_PROVIDER = get_default_provider()
+DEFAULT_MODEL = get_default_model(DEFAULT_PROVIDER)
 DEFAULT_TRUNCATE_LIMIT = 200
 TRACE_SKIP_KEYS = {"TOOL_CALLS", "ACTION_TOOLS", "MOVEMENT_BLOCKED", "TURN_TODO", "MECHANICS_WORLD_TOOLS"}
 
@@ -330,7 +331,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Story exploration demo.")
     defaults = _default_world_model()
 
-    parser.add_argument("--model", default=DEFAULT_MODEL, help="Ollama model id")
+    parser.add_argument(
+        "--provider",
+        default=DEFAULT_PROVIDER,
+        choices=get_provider_names(),
+        help="LLM provider: 'ollama' (local), 'openai', or 'anthropic'",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Model ID for the selected provider (defaults to provider's configured default)",
+    )
 
     parser.add_argument(
         "--starting-location",
@@ -381,7 +392,8 @@ def main() -> None:
     configured_roll_mode = get_roll_mode()
 
     engine = StoryEngine(
-        model=args.model,
+        provider=args.provider,
+        model=args.model,  # None → StoryEngine picks the provider's default
         verbose=args.verbose,
         starting_location=args.starting_location,
         starting_state=args.starting_state or world_defaults.starting_state,

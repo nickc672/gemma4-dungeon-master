@@ -2,9 +2,10 @@ from typing import Any, Dict, Sequence, Optional, List, Callable
 from .conversation_log import History
 from ..llm_interaction.adapter import LLMAdapter
 from ..app_config import (
-    get_active_model,
-    get_active_default_options,
-    get_active_stage_options,
+    get_default_provider,
+    get_default_model,
+    get_provider_default_options,
+    get_provider_stage_options,
     get_roll_mode,
 )
 from .session_state import BeatTracker, SessionSummary, SnapshotBuilder
@@ -104,6 +105,7 @@ class StoryEngine:
     def __init__(
         self,
         *,
+        provider: Optional[str] = None,
         model: Optional[str] = None,
         world_model: Optional[WorldModel] = None,
         world_model_data_dir: Optional[str] = None,
@@ -153,12 +155,13 @@ class StoryEngine:
         if self.roll_mode == "manual" and not callable(self.manual_roll_provider):
             self.roll_mode = "auto"
 
-        resolved_model = model or get_active_model()
+        resolved_provider = str(provider or get_default_provider()).strip().lower()
+        resolved_model = model or get_default_model(resolved_provider)
 
         self.adapter = LLMAdapter(
             model=resolved_model,
-            default_options=get_active_default_options(),
-            stage_options=get_active_stage_options(),
+            default_options=get_provider_default_options(resolved_provider),
+            stage_options=get_provider_stage_options(resolved_provider),
             verbose=verbose,
         )
 

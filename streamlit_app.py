@@ -9,7 +9,13 @@ from typing import Any, Dict, List
 import streamlit as st
 import streamlit.components.v1 as components
 
-from orchestrator.app_config import get_ollama_default_model, get_ollama_model_choices, get_roll_mode
+from orchestrator.app_config import (
+    get_default_model,
+    get_default_provider,
+    get_model_choices,
+    get_provider_names,
+    get_roll_mode,
+)
 from orchestrator.runtime_flow.pipeline import StoryEngine
 from orchestrator.world_state.world_model import build_world_model
 
@@ -69,8 +75,8 @@ def _get_installed_ollama_models() -> list[str]:
     return models
 
 
-def _config_signature(model: str, starting_location: str, starting_state: str, roll_mode: str) -> str:
-    return f"{model}|{starting_location}|{starting_state}|{roll_mode}"
+def _config_signature(provider: str, model: str, starting_location: str, starting_state: str, roll_mode: str) -> str:
+    return f"{provider}|{model}|{starting_location}|{starting_state}|{roll_mode}"
 
 
 def _resolve_manual_roll_notation(request: Dict[str, Any] | None) -> str:
@@ -135,8 +141,9 @@ def _streamlit_manual_roll_provider(request: Dict[str, Any]) -> int:
     return value
 
 
-def _initialize_session(model: str, starting_location: str, starting_state: str, roll_mode: str) -> None:
+def _initialize_session(provider: str, model: str, starting_location: str, starting_state: str, roll_mode: str) -> None:
     engine = StoryEngine(
+        provider=provider,
         model=model,
         starting_location=starting_location,
         starting_state=starting_state,
@@ -170,7 +177,7 @@ def _initialize_session(model: str, starting_location: str, starting_state: str,
     st.session_state.dice_board_visible = False
     st.session_state.dice_roll_nonce = 0
     st.session_state.dice_theme_color = ""
-    st.session_state.config_sig = _config_signature(model, starting_location, starting_state, roll_mode)
+    st.session_state.config_sig = _config_signature(provider, model, starting_location, starting_state, roll_mode)
 
 
 def _get_story_engine() -> StoryEngine:
@@ -523,20 +530,35 @@ def main() -> None:
 
     with st.sidebar:
         st.header("Session")
-        model_choices = get_ollama_model_choices()
-        for installed_model in _get_installed_ollama_models():
-            if installed_model not in model_choices:
-                model_choices.append(installed_model)
-        session_model = st.session_state.get("model_input", get_ollama_default_model())
+
+        # Provider selector
+        provider_choices = get_provider_names()
+        default_provider = get_default_provider()
+        session_provider = st.session_state.get("provider_input", default_provider)
+        if session_provider not in provider_choices:
+            session_provider = default_provider
+        provider = st.selectbox(
+            "Provider",
+            options=provider_choices,
+            index=provider_choices.index(session_provider),
+            key="provider_input",
+        ) or default_provider
+
+        # Model selector — choices depend on the selected provider
+        model_choices = get_model_choices(provider)
+        if provider == "ollama":
+            for installed_model in _get_installed_ollama_models():
+                if installed_model not in model_choices:
+                    model_choices.append(installed_model)
+        session_model = st.session_state.get("model_input", get_default_model(provider))
         if session_model not in model_choices:
             model_choices = [session_model, *model_choices]
-        selected_model_index = model_choices.index(session_model)
         model = st.selectbox(
-            "Ollama model",
+            "Model",
             options=model_choices,
-            index=selected_model_index,
+            index=model_choices.index(session_model),
             key="model_input",
-        ) or ""
+        ) or get_default_model(provider)
 
         starting_location = st.text_input(
             "Starting location",
@@ -563,12 +585,12 @@ def main() -> None:
         )
         st.caption("`manual` waits for a player 1d20 roll from the Roll the Dice panel.")
 
-    sig = _config_signature(model, starting_location, starting_state, roll_mode)
+    sig = _config_signature(provider, model, starting_location, starting_state, roll_mode)
 
     if "orchestrator" not in st.session_state:
-        _initialize_session(model, starting_location, starting_state, roll_mode)
+        _initialize_session(provider, model, starting_location, starting_state, roll_mode)
     elif start_new or st.session_state.get("config_sig") != sig:
-        _initialize_session(model, starting_location, starting_state, roll_mode)
+        _initialize_session(provider, model, starting_location, starting_state, roll_mode)
 
     _inject_player_background(PLAYER_BG_PATH)
     _inject_app_background(APP_BG_PATH)

@@ -187,9 +187,9 @@ def _default_provider() -> LLMProvider:
     unavailable (e.g. in tests or benchmark runs).
     """
     try:
-        from ..app_config import get_active_provider, get_provider_config
+        from ..app_config import get_default_provider, get_provider_config
         from .providers.factory import create_provider
-        name = get_active_provider()
+        name = get_default_provider()
         config = get_provider_config(name)
         return create_provider(name, config)
     except Exception:
