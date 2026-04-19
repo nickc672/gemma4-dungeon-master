@@ -42,8 +42,7 @@ class LLMAdapter:
         verbose: bool = False,
         force_retry_stage: Optional[str] = None,  # kept for call-site compat
     ) -> None:
-        self.model = model
-        self.verbose = verbose
+        self._verbose = verbose
         self.force_retry_stage = force_retry_stage  # used by LLMStep only
 
         if provider is None:
@@ -57,6 +56,40 @@ class LLMAdapter:
             max_attempts=max(1, max_attempts),
             verbose=verbose,
         )
+
+    # model is kept in sync with the underlying AgentLoop so external
+    # call-sites (Streamlit sidebar, CLI) can swap models mid-session
+    # without rebuilding the whole adapter.
+    @property
+    def model(self) -> str:
+        return self._loop.model
+
+    @model.setter
+    def model(self, value: str) -> None:
+        self._loop.model = str(value)
+
+    @property
+    def verbose(self) -> bool:
+        return self._verbose
+
+    @verbose.setter
+    def verbose(self, value: bool) -> None:
+        self._verbose = bool(value)
+        self._loop.verbose = bool(value)
+
+    def set_provider(
+        self,
+        provider: LLMProvider,
+        *,
+        default_options: Optional[Mapping[str, Any]] = None,
+        stage_options: Optional[Mapping[str, Mapping[str, Any]]] = None,
+    ) -> None:
+        """Swap the underlying provider and its options on the live loop."""
+        self._loop.provider = provider
+        if default_options is not None:
+            self._loop.default_options = dict(default_options)
+        if stage_options is not None:
+            self._loop.stage_options = dict(stage_options)
 
     # ------------------------------------------------------------------
     # Single-shot text / JSON helpers (used by LLMStep / narrate / intro)

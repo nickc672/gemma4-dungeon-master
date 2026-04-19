@@ -158,8 +158,14 @@ class StoryEngine:
         resolved_provider = str(provider or get_default_provider()).strip().lower()
         resolved_model = model or get_default_model(resolved_provider)
 
+        from ..app_config import get_provider_config
+        from ..llm_interaction.providers.factory import create_provider
+
+        llm_provider = create_provider(resolved_provider, get_provider_config(resolved_provider))
+
         self.adapter = LLMAdapter(
             model=resolved_model,
+            provider=llm_provider,
             default_options=get_provider_default_options(resolved_provider),
             stage_options=get_provider_stage_options(resolved_provider),
             verbose=verbose,
