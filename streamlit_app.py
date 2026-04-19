@@ -11,6 +11,8 @@ from orchestrator.app_config import (
     get_default_model,
     get_default_provider,
     get_model_choices as get_provider_model_choices,
+    get_ollama_default_model,
+    get_ollama_model_choices,
     get_provider_names,
     get_roll_mode,
 )
@@ -53,11 +55,6 @@ def load_world_defaults() -> WorldModel:
 
 @st.cache_data(ttl=30, show_spinner=False)
 def get_installed_ollama_models() -> list[str]:
-    """
-    Cached for 30 seconds. Without caching, Streamlit would spawn an
-    `ollama list` subprocess on every rerun (i.e. every widget interaction),
-    which triggers multiple concurrent connections to the Ollama daemon.
-    """
     try:
         result = subprocess.run(
             ["ollama", "list"],
@@ -83,12 +80,13 @@ def get_installed_ollama_models() -> list[str]:
     return models
 
 
-def build_model_choices(provider: str) -> list[str]:
-    choices = list(get_provider_model_choices(provider))
-    if provider == "ollama":
-        for installed_model in get_installed_ollama_models():
-            if installed_model not in choices:
-                choices.append(installed_model)
+def get_model_choices(provider: str | None = None) -> list[str]:
+    if provider and provider != "ollama":
+        return list(get_provider_model_choices(provider))
+    choices = get_ollama_model_choices()
+    for installed_model in get_installed_ollama_models():
+        if installed_model not in choices:
+            choices.append(installed_model)
     return choices
 
 
@@ -102,7 +100,6 @@ def ensure_runtime_state() -> None:
         "latched_manual_roll": None,
         "roll_request": {},
         "config_signature": "",
-        "active_provider": "",
         "active_model": "",
         "ui_notice": "",
     }
@@ -195,7 +192,6 @@ def initialize_session(config: SessionConfig) -> None:
     st.session_state.messages = [{"role": "assistant", "content": intro_text}]
     st.session_state.last_turn = {}
     st.session_state.config_signature = config.reset_signature()
-    st.session_state.active_provider = config.provider
     st.session_state.active_model = config.model
     clear_manual_roll_state(clear_pending_input=True)
 
@@ -209,54 +205,15 @@ def ensure_session(config: SessionConfig, *, reset_requested: bool) -> None:
         initialize_session(config)
 
 
-def sync_engine_provider(engine: StoryEngine, provider: str, model: str) -> None:
-    """
-    Apply provider/model changes to the live engine's adapter.
-
-    A provider change swaps out the underlying LLMProvider *and* its options;
-    a model change just updates the model string. Both apply on the next
-    request, avoiding a full session reset.
-    """
-    selected_provider = str(provider or "").strip().lower()
+def sync_engine_model(engine: StoryEngine, model: str) -> None:
     selected_model = str(model or "").strip()
-    if not selected_provider or not selected_model:
+    if not selected_model:
         return
-
-    provider_changed = st.session_state.get("active_provider") != selected_provider
-    model_changed = st.session_state.get("active_model") != selected_model
-    if not provider_changed and not model_changed:
+    if st.session_state.get("active_model") == selected_model:
         return
-
-    if provider_changed:
-        from orchestrator.app_config import (
-            get_provider_config,
-            get_provider_default_options,
-            get_provider_stage_options,
-        )
-        from orchestrator.llm_interaction.providers.factory import create_provider
-
-        try:
-            new_provider = create_provider(selected_provider, get_provider_config(selected_provider))
-        except Exception as exc:
-            st.error(f"Failed to initialize provider '{selected_provider}': {exc}")
-            return
-        engine.adapter.set_provider(
-            new_provider,
-            default_options=get_provider_default_options(selected_provider),
-            stage_options=get_provider_stage_options(selected_provider),
-        )
-        st.session_state.active_provider = selected_provider
-
     engine.adapter.model = selected_model
     st.session_state.active_model = selected_model
-
-    if provider_changed:
-        set_notice(
-            f"Provider changed to '{selected_provider}' with model '{selected_model}'. "
-            "The next request will use it."
-        )
-    else:
-        set_notice(f"Model changed to '{selected_model}'. The next request will use it.")
+    set_notice(f"Model changed to '{selected_model}'. The next request will use it.")
 
 
 def get_story_engine() -> StoryEngine:
@@ -272,7 +229,6 @@ def build_sidebar(world_defaults: WorldModel) -> tuple[SessionConfig, DisplayOpt
         selected_provider = st.session_state.get("provider_input", default_provider)
         if selected_provider not in provider_choices:
             selected_provider = default_provider
-
         provider = st.selectbox(
             "Provider",
             options=provider_choices,
@@ -280,10 +236,9 @@ def build_sidebar(world_defaults: WorldModel) -> tuple[SessionConfig, DisplayOpt
             key="provider_input",
         ) or default_provider
 
-        model_choices = build_model_choices(provider)
-        stored_model = st.session_state.get("model_input", get_default_model(provider))
-        # If the provider changed, the stored model may be invalid for this provider.
-        selected_model = stored_model if stored_model in model_choices else get_default_model(provider)
+        model_choices = get_model_choices(provider)
+        default_m = get_default_model(provider) if provider != "ollama" else get_ollama_default_model()
+        selected_model = st.session_state.get("model_input", default_m)
         if selected_model not in model_choices:
             model_choices = [selected_model, *model_choices]
 
@@ -329,7 +284,7 @@ def build_sidebar(world_defaults: WorldModel) -> tuple[SessionConfig, DisplayOpt
         show_debug_trace = st.checkbox("Show raw debug trace", value=False)
 
     config = SessionConfig(
-        provider=str(provider or "").strip().lower(),
+        provider=str(provider or default_provider).strip().lower(),
         model=str(model or "").strip(),
         starting_location=str(starting_location or "").strip(),
         starting_state=str(starting_state or "").strip(),
@@ -1149,7 +1104,7 @@ def main() -> None:
     ensure_session(session_config, reset_requested=reset_requested)
 
     engine = get_story_engine()
-    sync_engine_provider(engine, session_config.provider, session_config.model)
+    sync_engine_model(engine, session_config.model)
     try:
         engine.adapter.verbose = bool(display.show_debug_trace)
     except Exception:
