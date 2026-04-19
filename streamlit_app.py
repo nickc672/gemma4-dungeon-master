@@ -1,49 +1,54 @@
 from __future__ import annotations
 
-import base64
-import random
+import json
 import subprocess
-from pathlib import Path
-from typing import Any, Dict, List
+from dataclasses import dataclass
+from typing import Any
 
 import streamlit as st
-import streamlit.components.v1 as components
 
-from orchestrator.app_config import get_ollama_default_model, get_ollama_model_choices, get_roll_mode
+from orchestrator.app_config import (
+    get_ollama_default_model,
+    get_ollama_model_choices,
+    get_roll_mode,
+)
 from orchestrator.runtime_flow.pipeline import StoryEngine
-from orchestrator.world_state.world_model import build_world_model
+from orchestrator.world_state.entity import DynamicSentenceMemory
+from orchestrator.world_state.entity_tools import retrieve_memory_tool
+from orchestrator.world_state.world_model import WorldModel, build_world_model
 
-###
-PLAYER_BG_PATH = Path("UI-Assets/town-square.jpg")
-APP_BG_PATH = Path("UI-Assets/FantasyPort.jpg")
-FANTASTIC_DICE_URL = "https://fantasticdice.games/"
-DICE_COMPONENT_DIR = Path(__file__).resolve().parent / "components" / "fantastic_dice_component"
-FANTASTIC_DICE_COMPONENT = components.declare_component(
-    "fantastic_dice_component",
-    path=str(DICE_COMPONENT_DIR),
-)
 ROLL_REQUIRED_SENTINEL = "__DMC_ROLL_REQUIRED__"
-ROLL_REQUIRED_MESSAGE = (
-    "A dice roll is required before I can resolve that action. "
-    "Click Roll the Dice to continue."
-)
-ROLL_THEME_COLORS = [
-    "#C84C32",
-    "#2E86AB",
-    "#3FA34D",
-    "#7A4CC2",
-    "#D9A404",
-    "#C13C8A",
-    "#2F4858",
-    "#C96F2D",
-]
+ENGINE_ERROR_MESSAGE = "The Dungeon Master is unavailable right now."
 
 
-def _default_world_model():
+@dataclass(frozen=True)
+class SessionConfig:
+    model: str
+    starting_location: str
+    starting_state: str
+    roll_mode: str
+
+    def reset_signature(self) -> str:
+        return "|".join(
+            [
+                self.starting_location.strip(),
+                self.starting_state.strip(),
+                self.roll_mode.strip().lower(),
+            ]
+        )
+
+
+@dataclass(frozen=True)
+class DisplayOptions:
+    show_debug_trace: bool
+
+
+@st.cache_resource
+def load_world_defaults() -> WorldModel:
     return build_world_model()
 
 
-def _get_installed_ollama_models() -> list[str]:
+def get_installed_ollama_models() -> list[str]:
     try:
         result = subprocess.run(
             ["ollama", "list"],
@@ -69,785 +74,1054 @@ def _get_installed_ollama_models() -> list[str]:
     return models
 
 
-def _config_signature(model: str, starting_location: str, starting_state: str, roll_mode: str) -> str:
-    return f"{model}|{starting_location}|{starting_state}|{roll_mode}"
+def get_model_choices() -> list[str]:
+    choices = get_ollama_model_choices()
+    for installed_model in get_installed_ollama_models():
+        if installed_model not in choices:
+            choices.append(installed_model)
+    return choices
 
 
-def _resolve_manual_roll_notation(request: Dict[str, Any] | None) -> str:
+def ensure_runtime_state() -> None:
+    defaults = {
+        "messages": [],
+        "last_turn": {},
+        "pending_player_input": None,
+        "awaiting_manual_roll": False,
+        "captured_manual_roll": None,
+        "latched_manual_roll": None,
+        "roll_request": {},
+        "config_signature": "",
+        "active_model": "",
+        "ui_notice": "",
+    }
+    for key, value in defaults.items():
+        st.session_state.setdefault(key, value)
+
+
+def clear_manual_roll_state(*, clear_pending_input: bool) -> None:
+    st.session_state.awaiting_manual_roll = False
+    st.session_state.captured_manual_roll = None
+    st.session_state.latched_manual_roll = None
+    st.session_state.roll_request = {}
+    if clear_pending_input:
+        st.session_state.pending_player_input = None
+
+
+def resolve_roll_notation(request: dict[str, Any] | None) -> str:
     payload = dict(request or {})
     tool_name = str(payload.get("tool_name") or "").strip()
-    args = dict(payload.get("arguments") or {})
-    if tool_name == "roll_dice":
-        try:
-            sides = int(args.get("sides", 20))
-            count = int(args.get("count", 1))
-        except (TypeError, ValueError):
-            return "1d20"
-        return f"{count}d{sides}"
-    return "1d20"
+    arguments = dict(payload.get("arguments") or {})
+    if tool_name != "roll_dice":
+        return "1d20"
+    try:
+        count = int(arguments.get("count", 1))
+        sides = int(arguments.get("sides", 20))
+    except (TypeError, ValueError):
+        return "1d20"
+    return f"{count}d{sides}"
 
 
-def _resolve_manual_roll_max_face(request: Dict[str, Any] | None) -> int:
+def resolve_roll_max_face(request: dict[str, Any] | None) -> int:
     payload = dict(request or {})
     tool_name = str(payload.get("tool_name") or "").strip()
-    args = dict(payload.get("arguments") or {})
-    if tool_name == "roll_dice":
-        try:
-            sides = int(args.get("sides", 20))
-        except (TypeError, ValueError):
-            return 20
-        return max(2, min(1000, sides))
-    # skill_check and fallback behavior are d20-based.
-    return 20
+    arguments = dict(payload.get("arguments") or {})
+    if tool_name != "roll_dice":
+        return 20
+    try:
+        sides = int(arguments.get("sides", 20))
+    except (TypeError, ValueError):
+        return 20
+    return max(2, min(1000, sides))
 
 
-def _activate_roll_request(request: Dict[str, Any] | None = None) -> None:
-    seq = int(st.session_state.get("roll_request_seq", 0))
-    seq += 1
-    st.session_state.roll_request_seq = seq
-    st.session_state.roll_request_id = f"roll-{seq}"
-    st.session_state.roll_request_tool = str((request or {}).get("tool_name") or "").strip()
-    st.session_state.roll_notation = _resolve_manual_roll_notation(request)
-    st.session_state.roll_max_face = _resolve_manual_roll_max_face(request)
+def activate_roll_request(request: dict[str, Any] | None) -> None:
     st.session_state.awaiting_manual_roll = True
     st.session_state.captured_manual_roll = None
-    st.session_state.dice_board_visible = False
-    st.session_state.dice_roll_nonce = 0
-    st.session_state.dice_theme_color = ""
+    st.session_state.latched_manual_roll = None
+    st.session_state.roll_request = {
+        "notation": resolve_roll_notation(request),
+        "max_face": resolve_roll_max_face(request),
+    }
 
 
-def _streamlit_manual_roll_provider(request: Dict[str, Any]) -> int:
+def streamlit_manual_roll_provider(request: dict[str, Any]) -> int:
     latched_roll = st.session_state.get("latched_manual_roll")
     if latched_roll is not None:
         return int(latched_roll)
-    pending_roll = st.session_state.get("captured_manual_roll")
-    if pending_roll is None:
-        _activate_roll_request(request)
+
+    captured_roll = st.session_state.get("captured_manual_roll")
+    if captured_roll is None:
+        activate_roll_request(request)
         raise RuntimeError(ROLL_REQUIRED_SENTINEL)
-    value = int(pending_roll)
+
+    value = int(captured_roll)
     st.session_state.captured_manual_roll = None
     st.session_state.latched_manual_roll = value
     st.session_state.awaiting_manual_roll = False
-    st.session_state.roll_request_id = ""
-    st.session_state.roll_request_tool = ""
-    st.session_state.roll_notation = "1d20"
-    st.session_state.roll_max_face = 20
+    st.session_state.roll_request = {}
     return value
 
 
-def _initialize_session(model: str, starting_location: str, starting_state: str, roll_mode: str) -> None:
+def initialize_session(config: SessionConfig) -> None:
     engine = StoryEngine(
-        model=model,
-        starting_location=starting_location,
-        starting_state=starting_state,
-        roll_mode=roll_mode,
-        manual_roll_provider=_streamlit_manual_roll_provider if roll_mode == "manual" else None,
+        model=config.model,
+        starting_location=config.starting_location,
+        starting_state=config.starting_state,
+        roll_mode=config.roll_mode,
+        manual_roll_provider=streamlit_manual_roll_provider if config.roll_mode == "manual" else None,
     )
-    messages: List[Dict[str, str]] = []
-    intro_text = starting_state
+
+    intro_text = config.starting_state
     try:
         intro = engine.generate_intro()
-        intro_text = intro.get("ic") or starting_state
-    except Exception as exc:
-        st.warning("Intro generation failed; showing the starting state instead.")
-        st.exception(exc)
-    messages.append({"role": "assistant", "content": intro_text})
+        intro_text = str(intro.get("ic") or config.starting_state).strip()
+    except Exception:
+        st.warning("Intro generation failed. Using the configured starting state instead.")
 
     st.session_state.orchestrator = engine
-    st.session_state.messages = messages
+    st.session_state.messages = [{"role": "assistant", "content": intro_text}]
     st.session_state.last_turn = {}
-    st.session_state.pending_player_input = None
-    st.session_state.captured_manual_roll = None
-    st.session_state.awaiting_manual_roll = False
-    st.session_state.last_roll_event_id = ""
-    st.session_state.roll_request_id = ""
-    st.session_state.roll_request_seq = 0
-    st.session_state.roll_request_tool = ""
-    st.session_state.roll_notation = "1d20"
-    st.session_state.roll_max_face = 20
-    st.session_state.completed_roll_request_id = ""
-    st.session_state.latched_manual_roll = None
-    st.session_state.dice_board_visible = False
-    st.session_state.dice_roll_nonce = 0
-    st.session_state.dice_theme_color = ""
-    st.session_state.config_sig = _config_signature(model, starting_location, starting_state, roll_mode)
+    st.session_state.config_signature = config.reset_signature()
+    st.session_state.active_model = config.model
+    clear_manual_roll_state(clear_pending_input=True)
 
 
-def _get_story_engine() -> StoryEngine:
+def ensure_session(config: SessionConfig, *, reset_requested: bool) -> None:
+    current_signature = config.reset_signature()
+    if "orchestrator" not in st.session_state:
+        initialize_session(config)
+        return
+    if reset_requested:
+        initialize_session(config)
+
+
+def sync_engine_model(engine: StoryEngine, model: str) -> None:
+    selected_model = str(model or "").strip()
+    if not selected_model:
+        return
+    if st.session_state.get("active_model") == selected_model:
+        return
+    engine.adapter.model = selected_model
+    st.session_state.active_model = selected_model
+    set_notice(f"Model changed to '{selected_model}'. The next request will use it.")
+
+
+def get_story_engine() -> StoryEngine:
     return st.session_state.orchestrator
 
 
-def _append_assistant_message_once(text: str) -> None:
-    messages = st.session_state.get("messages", [])
-    if messages and messages[-1].get("role") == "assistant" and messages[-1].get("content") == text:
+def build_sidebar(world_defaults: WorldModel) -> tuple[SessionConfig, DisplayOptions, bool]:
+    with st.sidebar:
+        st.title("Session")
+
+        model_choices = get_model_choices()
+        selected_model = st.session_state.get("model_input", get_ollama_default_model())
+        if selected_model not in model_choices:
+            model_choices = [selected_model, *model_choices]
+
+        model = st.selectbox(
+            "Model",
+            options=model_choices,
+            index=model_choices.index(selected_model),
+            key="model_input",
+        )
+
+        default_roll_mode = get_roll_mode()
+        roll_mode = st.radio(
+            "Roll handling",
+            options=["auto", "manual"],
+            index=0 if st.session_state.get("roll_mode_input", default_roll_mode) == "auto" else 1,
+            key="roll_mode_input",
+            horizontal=True,
+        )
+
+        with st.expander("Story Setup", expanded=False):
+            starting_location = st.text_input(
+                "Starting location",
+                value=st.session_state.get(
+                    "starting_location_input",
+                    world_defaults.starting_location,
+                ),
+                key="starting_location_input",
+            )
+            starting_state = st.text_area(
+                "Starting state",
+                value=st.session_state.get(
+                    "starting_state_input",
+                    world_defaults.starting_state,
+                ),
+                height=180,
+                key="starting_state_input",
+            )
+
+        reset_requested = st.button("Reset Session With Current Setup", use_container_width=True)
+        st.caption("Model changes apply on the next request. Story setup changes apply only after reset.")
+
+        st.divider()
+        show_debug_trace = st.checkbox("Show raw debug trace", value=False)
+
+    config = SessionConfig(
+        model=str(model or "").strip(),
+        starting_location=str(starting_location or "").strip(),
+        starting_state=str(starting_state or "").strip(),
+        roll_mode=str(roll_mode or "auto").strip().lower(),
+    )
+    display = DisplayOptions(show_debug_trace=show_debug_trace)
+    return config, display, reset_requested
+
+
+def append_message(role: str, content: str) -> None:
+    st.session_state.messages.append({"role": role, "content": content})
+
+
+def set_notice(message: str) -> None:
+    st.session_state.ui_notice = str(message or "").strip()
+
+
+def render_notice() -> None:
+    message = str(st.session_state.get("ui_notice") or "").strip()
+    if not message:
         return
-    messages.append({"role": "assistant", "content": text})
-    st.session_state.messages = messages
+    st.success(message)
+    st.session_state.ui_notice = ""
 
 
-def _capture_roll_from_component(payload: Any) -> int | None:
-    if not st.session_state.get("pending_player_input"):
-        return None
-    if st.session_state.get("captured_manual_roll") is not None:
-        return None
-    if st.session_state.get("latched_manual_roll") is not None:
-        return None
+def is_waiting_for_roll() -> bool:
+    return bool(
+        st.session_state.get("awaiting_manual_roll")
+        and st.session_state.get("pending_player_input")
+    )
+
+
+def run_turn_with_ui(engine: StoryEngine, player_input: str, *, spinner_text: str) -> None:
+    with st.spinner(spinner_text):
+        try:
+            turn = engine.run_turn(player_input)
+        except Exception as exc:
+            if ROLL_REQUIRED_SENTINEL in str(exc):
+                st.rerun()
+            clear_manual_roll_state(clear_pending_input=True)
+            append_message("assistant", ENGINE_ERROR_MESSAGE)
+            st.error(f"Turn failed: {exc}")
+            st.rerun()
+
+    st.session_state.last_turn = turn
+    clear_manual_roll_state(clear_pending_input=True)
+    append_message("assistant", str(turn.get("narration", {}).get("ic") or "").strip())
+    st.rerun()
+
+
+def maybe_resume_pending_turn(engine: StoryEngine) -> None:
+    pending_input = st.session_state.get("pending_player_input")
+    captured_roll = st.session_state.get("captured_manual_roll")
+    if not pending_input or captured_roll is None:
+        return
+    run_turn_with_ui(engine, str(pending_input), spinner_text="Applying manual roll...")
+
+
+def submit_player_input(engine: StoryEngine, player_input: str, *, roll_mode: str) -> None:
+    cleaned = player_input.strip()
+    if not cleaned:
+        return
+
+    append_message("user", cleaned)
+    if roll_mode == "manual":
+        st.session_state.pending_player_input = cleaned
+        st.session_state.latched_manual_roll = None
+
+    run_turn_with_ui(engine, cleaned, spinner_text="The Dungeon Master is thinking...")
+
+
+def format_list(values: list[str], *, exclude_player: bool = False) -> str:
+    cleaned: list[str] = []
+    for value in values:
+        item = str(value or "").strip()
+        if not item:
+            continue
+        if exclude_player and item.lower() == "player":
+            continue
+        cleaned.append(item)
+    return ", ".join(cleaned) or "None"
+
+
+def format_lines(values: list[str]) -> str:
+    return "\n".join(str(value).strip() for value in values if str(value).strip())
+
+
+def parse_text_lines(text: str) -> list[str]:
+    lines: list[str] = []
+    seen: set[str] = set()
+    for raw_line in str(text or "").splitlines():
+        item = raw_line.strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        lines.append(item)
+    return lines
+
+
+def parse_token_list(text: str) -> list[str]:
+    tokens: list[str] = []
+    seen: set[str] = set()
+    normalized = str(text or "").replace(",", "\n")
+    for raw_line in normalized.splitlines():
+        item = raw_line.strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        tokens.append(item)
+    return tokens
+
+
+def format_json(value: Any) -> str:
+    return json.dumps(value, indent=2, ensure_ascii=True, sort_keys=True)
+
+
+def parse_json_mapping(text: str) -> dict[str, Any]:
+    raw = str(text or "").strip()
+    if not raw:
+        return {}
+    payload = json.loads(raw)
     if not isinstance(payload, dict):
-        return None
-    roll_id = str(payload.get("roll_id") or "").strip()
-    if roll_id == st.session_state.get("last_roll_event_id"):
-        return None
-    current_request_id = str(st.session_state.get("roll_request_id") or "").strip()
-    payload_request_id = str(payload.get("request_id") or "").strip()
-    if current_request_id and payload_request_id and payload_request_id != current_request_id:
-        return None
-    effective_request_id = payload_request_id or current_request_id
-    if (
-        effective_request_id
-        and effective_request_id == str(st.session_state.get("completed_roll_request_id") or "").strip()
-    ):
-        return None
-
-    raw_value = payload.get("roll_value", payload.get("d20"))
-    if raw_value is None and isinstance(payload.get("die"), dict):
-        die_payload = payload.get("die") or {}
-        raw_value = die_payload.get("value", die_payload.get("result"))
-    try:
-        roll_value = int(raw_value)
-    except (TypeError, ValueError):
-        return None
-    max_face = int(st.session_state.get("roll_max_face", 20) or 20)
-    if roll_value < 1 or roll_value > max_face:
-        return None
-
-    if not roll_id:
-        roll_id = f"{effective_request_id or 'roll'}:{roll_value}"
-
-    st.session_state.captured_manual_roll = roll_value
-    st.session_state.last_roll_event_id = roll_id
-    st.session_state.awaiting_manual_roll = False
-    st.session_state.roll_request_id = ""
-    st.session_state.roll_request_tool = ""
-    st.session_state.roll_notation = "1d20"
-    st.session_state.roll_max_face = 20
-    if effective_request_id:
-        st.session_state.completed_roll_request_id = effective_request_id
-    return roll_value
+        raise ValueError("Expected a JSON object.")
+    return {str(key): value for key, value in payload.items()}
 
 
-def _inject_player_background(image_path: Path) -> None:
-    try:
-        data = image_path.read_bytes()
-    except OSError:
-        st.sidebar.warning(f"Player background image not found at {image_path.as_posix()}")
-        return
+def parse_int_mapping(text: str) -> dict[str, int]:
+    payload = parse_json_mapping(text)
+    result: dict[str, int] = {}
+    for key, value in payload.items():
+        try:
+            result[str(key)] = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Value for '{key}' must be an integer.") from exc
+    return result
 
-    suffix = image_path.suffix.lower()
-    mime = "image/jpeg"
-    if suffix == ".png":
-        mime = "image/png"
-    elif suffix == ".webp":
-        mime = "image/webp"
 
-    encoded = base64.b64encode(data).decode("ascii")
-    st.markdown(
-        f"""
-        <style>
-          @import url('https://fonts.googleapis.com/css2?family=Tangerine:wght@400;700&display=swap');
+def parse_bool_mapping(text: str) -> dict[str, bool]:
+    payload = parse_json_mapping(text)
+    result: dict[str, bool] = {}
+    for key, value in payload.items():
+        if isinstance(value, bool):
+            result[str(key)] = value
+            continue
+        if isinstance(value, (int, float)):
+            result[str(key)] = bool(value)
+            continue
+        normalized = str(value).strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            result[str(key)] = True
+            continue
+        if normalized in {"false", "0", "no"}:
+            result[str(key)] = False
+            continue
+        raise ValueError(f"Value for '{key}' must be a boolean.")
+    return result
 
-          :root {{
-            --player-bg: url("data:{mime};base64,{encoded}");
-          }}
 
-          .block-container {{
-            max-width: 1600px;
-            padding-left: 2.25rem;
-            padding-right: 2.25rem;
-          }}
+def sorted_location_keys(engine: StoryEngine) -> list[str]:
+    return [location.key for location in sorted(engine.world.locations.values(), key=lambda value: value.key.lower())]
 
-          .tangerine-regular {{
-            font-family: "Tangerine", cursive;
-            font-weight: 400;
-            font-style: normal;
-          }}
 
-          .tangerine-bold {{
-            font-family: "Tangerine", cursive;
-            font-weight: 700;
-            font-style: normal;
-          }}
+def sorted_entity_keys(engine: StoryEngine) -> list[str]:
+    return [entity.key for entity in sorted(engine.world.entities.values(), key=lambda value: value.key.lower())]
 
-          .hero-caption {{
-            text-align: center;
-            margin-top: -0.35rem;
-            margin-bottom: 1.25rem;
-            color: rgba(243, 239, 230, 0.8);
-          }}
 
-          [data-testid="stTabs"] [role="tablist"] {{
-            justify-content: center;
-          }}
+def sorted_item_keys(engine: StoryEngine) -> list[str]:
+    return [item.key for item in sorted(engine.world.items.values(), key=lambda value: value.key.lower())]
 
-          [data-testid="stChatMessage"] {{
-            background: rgba(8, 10, 14, 0.55);
-            border-radius: 12px;
-            padding: 0.15rem 0.85rem;
-          }}
 
-          .dice-roller-shell {{
-            margin-top: 0.8rem;
-            margin-bottom: 0.5rem;
-            border-radius: 14px;
-            border: 1px solid rgba(237, 228, 211, 0.2);
-            background: rgba(7, 10, 14, 0.72);
-            padding: 0.75rem 0.9rem;
-            transition: box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-          }}
+def collect_memory_rows(engine: StoryEngine, entity_key: str = "") -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    selected_key = str(entity_key or "").strip().lower()
+    for key in sorted_entity_keys(engine):
+        entity = engine.world.get_entity(key)
+        if entity is None:
+            continue
+        if selected_key and entity.key.lower() != selected_key:
+            continue
+        for index, sentence in enumerate(entity.memory.sentences, start=1):
+            rows.append(
+                {
+                    "entity": entity.key,
+                    "entity_type": entity.entity_type,
+                    "memory_index": index,
+                    "sentence": sentence,
+                }
+            )
+    return rows
 
-          .dice-roller-shell.active {{
-            border-color: rgba(252, 199, 62, 0.78);
-            box-shadow: 0 0 0 1px rgba(252, 199, 62, 0.35), 0 0 22px rgba(252, 199, 62, 0.52);
-            animation: dice-pulse 1.2s ease-in-out infinite alternate;
-          }}
 
-          .dice-roller-shell.inactive {{
-            opacity: 0.78;
-          }}
+def search_memory_rows(engine: StoryEngine, scope: str, query: str, top_n: int) -> list[dict[str, Any]]:
+    cleaned_query = str(query or "").strip()
+    if not cleaned_query:
+        return []
 
-          .manual-roll-cta {{
-            display: flex;
-            justify-content: center;
-            margin: 0.9rem 0 0.75rem;
-          }}
+    scope_key = str(scope or "").strip()
+    rows: list[dict[str, Any]] = []
+    if scope_key == "__all__":
+        for entity_key in sorted_entity_keys(engine):
+            result = retrieve_memory_tool(
+                entity_name=entity_key,
+                context=cleaned_query,
+                top_n=max(1, int(top_n)),
+                game_state=engine.game_state,
+            )
+            for hit in result.get("memories", []):
+                rows.append(
+                    {
+                        "entity": entity_key,
+                        "score": float(hit.get("score", 0.0)),
+                        "sentence": str(hit.get("sentence") or ""),
+                    }
+                )
+        rows.sort(key=lambda row: (float(row["score"]), str(row["entity"])), reverse=True)
+        return rows[: max(1, int(top_n))]
 
-          .manual-roll-cta button {{
-            min-width: min(100%, 320px);
-            width: min(100%, 320px);
-            font-weight: 700;
-          }}
-
-          .dice-roller-header {{
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.85rem;
-          }}
-
-          .dice-token {{
-            width: 2.2rem;
-            height: 2.2rem;
-            border-radius: 8px;
-            border: 1px solid rgba(230, 221, 201, 0.4);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 0.82rem;
-            letter-spacing: 0.03em;
-            color: #f3efe6;
-            background: linear-gradient(140deg, rgba(65, 45, 17, 0.85), rgba(18, 15, 9, 0.9));
-            box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.55);
-          }}
-
-          .dice-roller-title {{
-            margin: 0;
-            color: #f3efe6;
-            font-size: 0.98rem;
-            line-height: 1.2;
-          }}
-
-          .dice-roller-note {{
-            margin-top: 0.4rem;
-            color: rgba(243, 239, 230, 0.78);
-            font-size: 0.84rem;
-          }}
-
-          @keyframes dice-pulse {{
-            from {{ box-shadow: 0 0 0 1px rgba(252, 199, 62, 0.35), 0 0 14px rgba(252, 199, 62, 0.38); }}
-            to {{ box-shadow: 0 0 0 1px rgba(252, 199, 62, 0.45), 0 0 28px rgba(252, 199, 62, 0.66); }}
-          }}
-
-          div[data-testid="stVerticalBlock"]:has(#character-image-anchor) {{
-            position: relative;
-          }}
-
-          div[data-testid="stVerticalBlock"]:has(#character-image-anchor)
-            div[data-testid="stElementContainer"]:has(#character-image-anchor) {{
-            display: none;
-          }}
-
-          div[data-testid="stVerticalBlock"]:has(#character-image-anchor)
-            div[data-testid="stElementContainer"]:has(#character-image-anchor)
-            + div[data-testid="stElementContainer"] {{
-            position: absolute;
-            top: 0.6rem;
-            right: 0.6rem;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.2s ease;
-            z-index: 5;
-          }}
-
-          div[data-testid="stVerticalBlock"]:has(#character-image-anchor):has(div[data-testid="stImage"]:hover)
-            div[data-testid="stElementContainer"]:has(#character-image-anchor)
-            + div[data-testid="stElementContainer"],
-          div[data-testid="stVerticalBlock"]:has(#character-image-anchor):has(div[data-testid="stButton"]:hover)
-            div[data-testid="stElementContainer"]:has(#character-image-anchor)
-            + div[data-testid="stElementContainer"] {{
-            opacity: 1;
-            pointer-events: auto;
-            transition-delay: 0.2s;
-          }}
-
-          div[data-testid="stVerticalBlock"]:has(#character-image-anchor)
-            div[data-testid="stElementContainer"]:has(#character-image-anchor)
-            + div[data-testid="stElementContainer"] > div[data-testid="stButton"] > button {{
-            white-space: nowrap;
-            padding: 0.35rem 0.7rem;
-            min-width: 0;
-            width: auto;
-            font-size: 0.8rem;
-            line-height: 1.1;
-            border-radius: 999px;
-            background: rgba(9, 12, 18, 0.85);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: #f3efe6;
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
-          }}
-        </style>
-        """,
-        unsafe_allow_html=True,
+    result = retrieve_memory_tool(
+        entity_name=scope_key,
+        context=cleaned_query,
+        top_n=max(1, int(top_n)),
+        game_state=engine.game_state,
     )
+    for hit in result.get("memories", []):
+        rows.append(
+            {
+                "entity": scope_key,
+                "score": float(hit.get("score", 0.0)),
+                "sentence": str(hit.get("sentence") or ""),
+            }
+        )
+    return rows
 
 
-def _inject_app_background(image_path: Path) -> None:
-    try:
-        data = image_path.read_bytes()
-    except OSError:
-        st.warning(f"App background image not found at {image_path.as_posix()}")
-        return
-
-    suffix = image_path.suffix.lower()
-    mime = "image/jpeg"
-    if suffix == ".png":
-        mime = "image/png"
-    elif suffix == ".webp":
-        mime = "image/webp"
-
-    encoded = base64.b64encode(data).decode("ascii")
-    st.markdown(
-        f"""
-        <style>
-          :root {{
-            --app-bg: url("data:{mime};base64,{encoded}");
-          }}
-
-          body,
-          .stApp,
-          div[data-testid="stAppViewContainer"] {{
-            background-image: var(--app-bg);
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-          }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+def sync_npc_locations(engine: StoryEngine) -> None:
+    engine.game_state.npc_locations.clear()
+    for entity in engine.world.entities.values():
+        if entity.entity_type == "npc" and entity.location:
+            engine.game_state.npc_locations[entity.key] = entity.location
 
 
-def _dot_escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace('"', '\\"')
+def sync_player_location(engine: StoryEngine, location_key: str) -> None:
+    engine.game_state.player_location = str(location_key or "").strip()
+    engine.game_state.discovered_keys.add(engine.game_state.player_location)
+    engine.discovered_keys = engine.game_state.discovered_keys
+    player = engine.world.get_entity("Player")
+    if player is not None:
+        player.set_location(engine.game_state.player_location)
 
 
-def _build_world_state_dot(snapshot: Dict[str, Any]) -> str:
+def build_world_state_dot(snapshot: dict[str, Any]) -> str:
     nodes = snapshot.get("nodes") or []
     edges = snapshot.get("edges") or []
 
     lines = [
         "graph WorldState {",
         '  graph [bgcolor="transparent", splines=true, overlap=false];',
-        '  node [shape=ellipse, style=filled, fontname="Helvetica", fontsize=11, color="#2f3a45"];',
-        '  edge [color="#98a1ab", penwidth=1.2];',
+        '  node [shape=ellipse, style=filled, fontname="Helvetica", fontsize=11, color="#6b7280"];',
+        '  edge [color="#cbd5e1", penwidth=1.1];',
     ]
 
     for node in nodes:
-        key = str(node.get("key", "")).strip()
+        key = str(node.get("key") or "").strip()
         if not key:
             continue
-        label = _dot_escape(key)
+        escaped_key = key.replace("\\", "\\\\").replace('"', '\\"')
         flags = node.get("flags") or {}
         if flags.get("current_location"):
-            fill = "#f4d35e"
-            font = "#1f2328"
-            pen = "#b08900"
-            penwidth = 2.4
+            fill = "#dbeafe"
+            color = "#2563eb"
         elif flags.get("in_scene"):
-            fill = "#61c9a8"
-            font = "#0b1a15"
-            pen = "#2f7f64"
-            penwidth = 2.0
+            fill = "#f3f4f6"
+            color = "#6b7280"
         else:
-            fill = "#c8ced6"
-            font = "#1f2328"
-            pen = "#7b8794"
-            penwidth = 1.2
-        lines.append(
-            f'  "{label}" [fillcolor="{fill}", fontcolor="{font}", color="{pen}", penwidth={penwidth}];'
-        )
+            fill = "#ffffff"
+            color = "#9ca3af"
+        lines.append(f'  "{escaped_key}" [fillcolor="{fill}", color="{color}"];')
 
     for edge in edges:
-        src = str(edge.get("src", "")).strip()
-        dst = str(edge.get("dst", "")).strip()
+        src = str(edge.get("src") or "").strip()
+        dst = str(edge.get("dst") or "").strip()
         if not src or not dst:
             continue
-        lines.append(f'  "{_dot_escape(src)}" -- "{_dot_escape(dst)}";')
+        escaped_src = src.replace("\\", "\\\\").replace('"', '\\"')
+        escaped_dst = dst.replace("\\", "\\\\").replace('"', '\\"')
+        lines.append(f'  "{escaped_src}" -- "{escaped_dst}";')
 
     lines.append("}")
     return "\n".join(lines)
 
 
-def main() -> None:
-    st.set_page_config(page_title="The Dungeon Master's Companion", layout="wide")
-    world_defaults = _default_world_model()
-    st.markdown(
-        '<h1 class="tangerine-bold" '
-        'style="font-size:70px; text-align:center; margin-bottom:0.25rem; font-family:\'Tangerine\', cursive;">'
-        "The Dungeon Master's Companion</h1>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="hero-caption">Describe your character\'s actions. The Dungeon Master responds and advances the story.</div>',
-        unsafe_allow_html=True,
-    )
+def render_roll_panel() -> None:
+    if not is_waiting_for_roll():
+        return
 
-    with st.sidebar:
-        st.header("Session")
-        model_choices = get_ollama_model_choices()
-        for installed_model in _get_installed_ollama_models():
-            if installed_model not in model_choices:
-                model_choices.append(installed_model)
-        session_model = st.session_state.get("model_input", get_ollama_default_model())
-        if session_model not in model_choices:
-            model_choices = [session_model, *model_choices]
-        selected_model_index = model_choices.index(session_model)
-        model = st.selectbox(
-            "Ollama model",
-            options=model_choices,
-            index=selected_model_index,
-            key="model_input",
-        ) or ""
+    roll_request = dict(st.session_state.get("roll_request") or {})
+    notation = str(roll_request.get("notation") or "1d20")
+    max_face = int(roll_request.get("max_face") or 20)
+    pending_input = str(st.session_state.get("pending_player_input") or "").strip()
 
-        starting_location = st.text_input(
-            "Starting location",
-            value=st.session_state.get("starting_location_input", world_defaults.starting_location),
-            key="starting_location_input",
-        ) or ""
+    st.subheader("Manual Roll")
+    st.info(f"Enter the result for `{notation}` to continue this turn.")
+    st.caption(f"Pending action: {pending_input}")
 
-        starting_state = st.text_area(
-            "Starting state",
-            value=st.session_state.get("starting_state_input", world_defaults.starting_state),
-            height=200,
-            key="starting_state_input",
-        ) or ""
-
-        start_new = st.button("Start new session")
-        show_status = st.checkbox("Show story status", value=True)
-        show_debug = st.checkbox("Show debug info", value=False)
-        default_roll_mode = get_roll_mode()
-        roll_mode = st.selectbox(
-            "Roll resolution",
-            options=["auto", "manual"],
-            index=0 if st.session_state.get("roll_mode_input", default_roll_mode) == "auto" else 1,
-            key="roll_mode_input",
+    with st.form("manual_roll_form"):
+        roll_value = st.number_input(
+            "Roll result",
+            min_value=1,
+            max_value=max_face,
+            value=1,
+            step=1,
         )
-        st.caption("`manual` waits for a player 1d20 roll from the Roll the Dice panel.")
+        submitted = st.form_submit_button("Apply Roll", use_container_width=True)
 
-    sig = _config_signature(model, starting_location, starting_state, roll_mode)
+    if submitted:
+        st.session_state.captured_manual_roll = int(roll_value)
+        st.rerun()
 
-    if "orchestrator" not in st.session_state:
-        _initialize_session(model, starting_location, starting_state, roll_mode)
-    elif start_new or st.session_state.get("config_sig") != sig:
-        _initialize_session(model, starting_location, starting_state, roll_mode)
 
-    _inject_player_background(PLAYER_BG_PATH)
-    _inject_app_background(APP_BG_PATH)
+def render_messages() -> None:
+    st.subheader("Conversation")
+    for message in st.session_state.get("messages", []):
+        with st.chat_message(str(message.get("role") or "assistant")):
+            st.markdown(str(message.get("content") or ""))
 
-    engine = _get_story_engine()
+
+def render_overview(snapshot: dict[str, Any]) -> None:
+    beat = snapshot.get("beat_state") or {}
+    total = int(beat.get("total", 0))
+    beat_progress = f"{int(beat.get('current_index', 0)) + 1} of {total}" if total else "Not started"
+
+    st.subheader("Engine State")
+    st.markdown(f"**Turn:** {snapshot.get('turn', 0)}")
+    st.markdown(f"**Location:** {snapshot.get('current_location') or 'Unknown'}")
+    st.markdown(f"**Beat:** {beat_progress}")
+    st.write(str(beat.get("current") or "No active beat."))
+
+
+def render_scene(snapshot: dict[str, Any]) -> None:
+    scene = snapshot.get("scene") or {}
+    st.subheader("Current Scene")
+    st.write(str(scene.get("description") or "No scene description available."))
+    st.markdown(f"**Connections:** {format_list(scene.get('connections') or [])}")
+    st.markdown(f"**Actors Here:** {format_list(scene.get('actors_here') or [], exclude_player=True)}")
+    st.markdown(f"**Items Here:** {format_list(scene.get('items_here') or [])}")
+
+
+def render_story_state(snapshot: dict[str, Any]) -> None:
+    story_status = str(snapshot.get("story_status") or "").strip()
+    session_summary = str(snapshot.get("session_summary") or "").strip()
+
+    if story_status:
+        st.subheader("Story Status")
+        st.write(story_status)
+
+    if session_summary:
+        st.subheader("Session Summary")
+        st.text(session_summary)
+
+
+def render_last_turn() -> None:
+    last_turn = st.session_state.get("last_turn") or {}
+    if not last_turn:
+        return
+
+    phase_summaries = last_turn.get("phase_summaries") or {}
+    tool_calls = last_turn.get("tool_calls") or []
+    turn_todo = last_turn.get("turn_todo") or []
+
+    with st.expander("Last Turn Details", expanded=False):
+        if phase_summaries:
+            st.markdown("**Phase Summaries**")
+            st.json(phase_summaries, expanded=False)
+        if tool_calls:
+            st.markdown("**Tool Calls**")
+            st.json(tool_calls, expanded=False)
+        if turn_todo:
+            st.markdown("**Turn Todo**")
+            st.json(turn_todo, expanded=False)
+
+
+def render_world_graph(snapshot: dict[str, Any]) -> None:
+    nodes = snapshot.get("nodes") or []
+    if not nodes:
+        return
+
+    with st.expander("World Graph", expanded=False):
+        st.graphviz_chart(build_world_state_dot(snapshot), use_container_width=True)
+
+
+def render_debug_trace(display: DisplayOptions) -> None:
+    if not display.show_debug_trace:
+        return
+
+    last_turn = st.session_state.get("last_turn") or {}
+    debug_data = last_turn.get("llm_trace") or last_turn.get("llm_debug")
+    with st.expander("Raw Debug Trace", expanded=False):
+        if debug_data:
+            st.json(debug_data, expanded=False)
+        else:
+            st.write("No debug trace is available yet.")
+
+
+def render_runtime_editor(engine: StoryEngine) -> None:
+    st.subheader("Runtime State")
+    st.caption("These changes affect the live session only.")
+
+    location_keys = sorted_location_keys(engine)
+    if not location_keys:
+        st.info("No locations are available in the current world model.")
+        return
+    current_location = engine.game_state.player_location
+    if current_location not in location_keys and current_location:
+        location_keys = [current_location, *location_keys]
+
+    beat_options = list(range(len(engine.beats.beats)))
+    current_beat_index = engine.beats.index if beat_options else 0
+    if beat_options:
+        current_beat_index = max(0, min(current_beat_index, len(beat_options) - 1))
+
+    with st.form("runtime_state_editor_form"):
+        player_location = st.selectbox(
+            "Player location",
+            options=location_keys,
+            index=location_keys.index(current_location) if current_location in location_keys else 0,
+        )
+        story_status = st.text_area("Story status", value=engine.story_status, height=140)
+        session_summary = st.text_area(
+            "Session summary lines",
+            value=format_lines(engine.summary.events),
+            height=140,
+            help="One summary event per line.",
+        )
+        discovered_keys_text = st.text_area(
+            "Discovered keys",
+            value=format_lines(sorted(engine.game_state.discovered_keys)),
+            height=140,
+            help="One key per line.",
+        )
+        quest_flags_text = st.text_area(
+            "Quest flags (JSON)",
+            value=format_json(engine.game_state.quest_flags),
+            height=180,
+        )
+        if beat_options:
+            beat_index = st.selectbox(
+                "Current beat",
+                options=beat_options,
+                index=current_beat_index,
+                format_func=lambda idx: f"{idx + 1}. {engine.beats.beats[idx]}",
+            )
+        else:
+            beat_index = None
+            st.write("No beats are configured for this session.")
+        submitted = st.form_submit_button("Apply Runtime Changes", use_container_width=True)
+
+    if not submitted:
+        return
+
     try:
-        engine.adapter.verbose = bool(show_debug)
+        quest_flags = parse_bool_mapping(quest_flags_text)
+    except ValueError as exc:
+        st.error(str(exc))
+        return
+
+    discovered_keys = set(parse_token_list(discovered_keys_text))
+    discovered_keys.add(player_location)
+    engine.game_state.discovered_keys.clear()
+    engine.game_state.discovered_keys.update(discovered_keys)
+    sync_player_location(engine, player_location)
+    engine.story_status = story_status.strip()
+    engine.summary.events = parse_text_lines(session_summary)
+    engine.game_state.quest_flags.clear()
+    engine.game_state.quest_flags.update(quest_flags)
+    if beat_index is not None:
+        engine.beats.index = int(beat_index)
+    sync_npc_locations(engine)
+    set_notice("Runtime state updated.")
+    st.rerun()
+
+
+def render_location_editor(engine: StoryEngine) -> None:
+    location_keys = sorted_location_keys(engine)
+    if not location_keys:
+        st.info("No locations are loaded.")
+        return
+
+    st.subheader("Locations")
+    selected_key = st.selectbox("Location", options=location_keys, key="location_editor_select")
+    location = engine.world.get_location(selected_key)
+    if location is None:
+        st.error("Selected location was not found.")
+        return
+
+    form_col, preview_col = st.columns([1.4, 1], gap="large")
+    with form_col:
+        with st.form("location_editor_form"):
+            name = st.text_input("Name", value=location.name)
+            description = st.text_area("Description", value=location.description, height=180)
+            connections_text = st.text_area(
+                "Connections",
+                value=format_lines(location.connections),
+                height=140,
+                help="One location key per line.",
+            )
+            tags_text = st.text_area(
+                "Tags",
+                value=format_lines(location.tags),
+                height=100,
+                help="One tag per line.",
+            )
+            submitted = st.form_submit_button("Apply Location Changes", use_container_width=True)
+
+        if submitted:
+            connections = parse_token_list(connections_text)
+            unknown_connections = [key for key in connections if engine.world.get_location(key) is None]
+            if unknown_connections:
+                st.error(f"Unknown connected locations: {', '.join(unknown_connections)}")
+            else:
+                location.name = name.strip() or location.key
+                location.description = description.strip()
+                location.connections = connections
+                location.tags = parse_token_list(tags_text)
+                set_notice(f"Updated location '{location.key}'.")
+                st.rerun()
+
+    with preview_col:
+        st.markdown("**Current Record**")
+        st.json(location.to_record(), expanded=False)
+
+
+def render_entity_editor(engine: StoryEngine) -> None:
+    entity_keys = sorted_entity_keys(engine)
+    if not entity_keys:
+        st.info("No entities are loaded.")
+        return
+
+    st.subheader("Entities")
+    selected_key = st.selectbox("Entity", options=entity_keys, key="entity_editor_select")
+    entity = engine.world.get_entity(selected_key)
+    if entity is None:
+        st.error("Selected entity was not found.")
+        return
+
+    entity_type_options = sorted({"npc", "player", *[value.entity_type for value in engine.world.entities.values()]})
+    if entity.entity_type not in entity_type_options:
+        entity_type_options.append(entity.entity_type)
+
+    location_keys = sorted_location_keys(engine)
+    if not location_keys:
+        st.error("No locations are available, so entity locations cannot be edited.")
+        return
+    current_location = entity.location
+    if current_location not in location_keys and current_location:
+        location_keys = [current_location, *location_keys]
+
+    form_col, preview_col = st.columns([1.4, 1], gap="large")
+    with form_col:
+        with st.form("entity_editor_form"):
+            name = st.text_input("Name", value=entity.name)
+            entity_type = st.selectbox(
+                "Entity type",
+                options=entity_type_options,
+                index=entity_type_options.index(entity.entity_type),
+            )
+            location = st.selectbox(
+                "Location",
+                options=location_keys,
+                index=location_keys.index(current_location) if current_location in location_keys else 0,
+            )
+            description = st.text_area("Description", value=entity.description, height=160)
+            tags_text = st.text_area(
+                "Tags",
+                value=format_lines(entity.tags),
+                height=100,
+                help="One tag per line.",
+            )
+            skills_text = st.text_area("Skills (JSON)", value=format_json(entity.skills), height=160)
+            stats_text = st.text_area("Stats (JSON)", value=format_json(entity.stats), height=160)
+            memory_text = st.text_area(
+                "Memory lines",
+                value=format_lines(entity.memory.sentences),
+                height=140,
+                help="One memory line per line.",
+            )
+            submitted = st.form_submit_button("Apply Entity Changes", use_container_width=True)
+
+        if submitted:
+            try:
+                skills = parse_int_mapping(skills_text)
+                stats = parse_int_mapping(stats_text)
+            except ValueError as exc:
+                st.error(str(exc))
+            else:
+                entity.name = name.strip() or entity.key
+                entity.entity_type = entity_type.strip().lower() or entity.entity_type
+                entity.set_location(location)
+                entity.description = description.strip()
+                entity.tags = parse_token_list(tags_text)
+                entity.skills = skills
+                entity.stats = stats
+                entity.memory.sentences = parse_text_lines(memory_text)
+                engine.world.sync_actor_inventories()
+                sync_npc_locations(engine)
+                if entity.key.lower() == "player" or entity.entity_type == "player":
+                    sync_player_location(engine, location)
+                set_notice(f"Updated entity '{entity.key}'.")
+                st.rerun()
+
+    with preview_col:
+        st.markdown("**Current Record**")
+        st.json(entity.to_public_view(include_memory_preview=True), expanded=False)
+
+
+def render_item_editor(engine: StoryEngine) -> None:
+    item_keys = sorted_item_keys(engine)
+    if not item_keys:
+        st.info("No items are loaded.")
+        return
+
+    st.subheader("Items")
+    selected_key = st.selectbox("Item", options=item_keys, key="item_editor_select")
+    item = engine.world.get_item(selected_key)
+    if item is None:
+        st.error("Selected item was not found.")
+        return
+
+    holder_kind_options = ["location", "entity"]
+    current_holder_kind = item.holder_kind if item.holder_kind in holder_kind_options else "location"
+    selected_holder_kind = st.selectbox(
+        "Holder type",
+        options=holder_kind_options,
+        index=holder_kind_options.index(current_holder_kind),
+        key="item_editor_holder_kind",
+    )
+    holder_options = (
+        sorted_location_keys(engine)
+        if selected_holder_kind == "location"
+        else sorted_entity_keys(engine)
+    )
+    current_holder_key = item.holder_key
+    if current_holder_key not in holder_options and current_holder_key:
+        holder_options = [current_holder_key, *holder_options]
+    if not holder_options:
+        st.error(f"No valid {selected_holder_kind} holders are available for this item.")
+        return
+
+    form_col, preview_col = st.columns([1.4, 1], gap="large")
+    with form_col:
+        with st.form("item_editor_form"):
+            name = st.text_input("Name", value=item.name)
+            description = st.text_area("Description", value=item.description, height=160)
+            holder_key = st.selectbox(
+                "Holder",
+                options=holder_options,
+                index=holder_options.index(current_holder_key) if current_holder_key in holder_options else 0,
+            )
+            portable = st.checkbox("Portable", value=bool(item.portable))
+            tags_text = st.text_area(
+                "Tags",
+                value=format_lines(item.tags),
+                height=100,
+                help="One tag per line.",
+            )
+            submitted = st.form_submit_button("Apply Item Changes", use_container_width=True)
+
+        if submitted:
+            item.name = name.strip() or item.key
+            item.description = description.strip()
+            item.set_holder(selected_holder_kind, holder_key)
+            item.portable = bool(portable)
+            item.tags = parse_token_list(tags_text)
+            engine.world.sync_actor_inventories()
+            set_notice(f"Updated item '{item.key}'.")
+            st.rerun()
+
+    with preview_col:
+        st.markdown("**Current Record**")
+        st.json(item.to_record(), expanded=False)
+
+
+def render_memory_browser(engine: StoryEngine) -> None:
+    entity_keys = sorted_entity_keys(engine)
+    if not entity_keys:
+        st.info("No entities are loaded, so no runtime memory is available.")
+        return
+
+    backend_status = DynamicSentenceMemory.backend_status()
+    memory_rows = collect_memory_rows(engine)
+    entities_with_memory = len({row["entity"] for row in memory_rows})
+
+    st.subheader("Memory RAG")
+    st.caption("This is the live runtime memory store and retrieval path used by the session.")
+
+    metric_col_1, metric_col_2, metric_col_3 = st.columns(3)
+    with metric_col_1:
+        st.metric("Entities", len(entity_keys))
+    with metric_col_2:
+        st.metric("With Memory", entities_with_memory)
+    with metric_col_3:
+        st.metric("Memory Rows", len(memory_rows))
+
+    st.markdown("**Backend Status**")
+    st.json(backend_status, expanded=False)
+
+    query_tab, corpus_tab = st.tabs(["Query", "Corpus"])
+
+    with query_tab:
+        scope_options = ["__all__", *entity_keys]
+        scope = st.selectbox(
+            "Scope",
+            options=scope_options,
+            format_func=lambda value: "All entities" if value == "__all__" else value,
+            key="memory_query_scope",
+        )
+        query = st.text_input(
+            "Query",
+            value=st.session_state.get("memory_query_text", ""),
+            key="memory_query_text",
+            placeholder="Search the runtime memories for a clue, person, or event...",
+        )
+        top_n = st.slider("Top results", min_value=1, max_value=10, value=4, key="memory_query_top_n")
+
+        if not query.strip():
+            st.info("Enter a query to inspect memory retrieval results.")
+        else:
+            results = search_memory_rows(engine, scope=scope, query=query, top_n=top_n)
+            if results:
+                st.dataframe(results, use_container_width=True)
+            else:
+                st.write("No memory hits matched this query.")
+
+            if scope != "__all__":
+                tool_payload = retrieve_memory_tool(
+                    entity_name=scope,
+                    context=query,
+                    top_n=top_n,
+                    game_state=engine.game_state,
+                )
+                with st.expander("Tool Payload", expanded=False):
+                    st.json(tool_payload, expanded=False)
+
+    with corpus_tab:
+        selected_entity = st.selectbox(
+            "Entity",
+            options=["__all__", *entity_keys],
+            format_func=lambda value: "All entities" if value == "__all__" else value,
+            key="memory_corpus_entity",
+        )
+
+        if selected_entity == "__all__":
+            st.dataframe(memory_rows, use_container_width=True)
+        else:
+            entity_rows = collect_memory_rows(engine, entity_key=selected_entity)
+            if entity_rows:
+                st.dataframe(entity_rows, use_container_width=True)
+            else:
+                st.write("This entity has no stored memory rows.")
+
+
+def render_snapshot_browser(engine: StoryEngine, display: DisplayOptions) -> None:
+    snapshot = engine.snapshot()
+    validation_errors = engine.world.validate()
+
+    if validation_errors:
+        st.warning("\n".join(validation_errors))
+    else:
+        st.success("World model validation passed.")
+
+    st.subheader("Browse")
+    browse_tab, snapshot_tab = st.tabs(["Records", "Snapshot"])
+
+    with browse_tab:
+        st.markdown("**Story Record**")
+        st.json(engine.world.story_record(), expanded=False)
+        st.markdown("**Locations**")
+        st.dataframe(engine.world.list_location_records(), use_container_width=True)
+        st.markdown("**Entities**")
+        entity_rows = [engine.world.get_entity(key).to_public_view() for key in sorted_entity_keys(engine)]
+        st.dataframe(entity_rows, use_container_width=True)
+        st.markdown("**Items**")
+        st.dataframe(engine.world.list_item_records(), use_container_width=True)
+
+    with snapshot_tab:
+        st.markdown("**Runtime Snapshot**")
+        st.json(snapshot, expanded=False)
+        render_world_graph(snapshot)
+        render_debug_trace(display)
+
+
+def render_world_state_editor(engine: StoryEngine, display: DisplayOptions) -> None:
+    st.caption("Inspect and edit the current in-memory world state for this session.")
+    runtime_tab, location_tab, entity_tab, item_tab, memory_tab, snapshot_tab = st.tabs(
+        ["Runtime", "Locations", "Entities", "Items", "Memory", "Browse"]
+    )
+
+    with runtime_tab:
+        render_runtime_editor(engine)
+    with location_tab:
+        render_location_editor(engine)
+    with entity_tab:
+        render_entity_editor(engine)
+    with item_tab:
+        render_item_editor(engine)
+    with memory_tab:
+        render_memory_browser(engine)
+    with snapshot_tab:
+        render_snapshot_browser(engine, display)
+
+
+def main() -> None:
+    st.set_page_config(page_title="Dungeon Master's Companion", layout="wide")
+    ensure_runtime_state()
+
+    world_defaults = load_world_defaults()
+    session_config, display, reset_requested = build_sidebar(world_defaults)
+    ensure_session(session_config, reset_requested=reset_requested)
+
+    engine = get_story_engine()
+    sync_engine_model(engine, session_config.model)
+    try:
+        engine.adapter.verbose = bool(display.show_debug_trace)
     except Exception:
         pass
 
-    # Guard against stale UI state across reruns/reloads.
-    if "completed_roll_request_id" not in st.session_state:
-        st.session_state.completed_roll_request_id = ""
-    if "latched_manual_roll" not in st.session_state:
-        st.session_state.latched_manual_roll = None
-    if "roll_request_tool" not in st.session_state:
-        st.session_state.roll_request_tool = ""
-    if "roll_notation" not in st.session_state:
-        st.session_state.roll_notation = "1d20"
-    if "roll_max_face" not in st.session_state:
-        st.session_state.roll_max_face = 20
-    if "dice_board_visible" not in st.session_state:
-        st.session_state.dice_board_visible = False
-    if "dice_roll_nonce" not in st.session_state:
-        st.session_state.dice_roll_nonce = 0
-    if "dice_theme_color" not in st.session_state:
-        st.session_state.dice_theme_color = ""
-    if roll_mode != "manual":
-        st.session_state.awaiting_manual_roll = False
-        st.session_state.pending_player_input = None
-        st.session_state.captured_manual_roll = None
-        st.session_state.roll_request_id = ""
-        st.session_state.roll_request_tool = ""
-        st.session_state.roll_notation = "1d20"
-        st.session_state.roll_max_face = 20
-        st.session_state.latched_manual_roll = None
-        st.session_state.dice_board_visible = False
-        st.session_state.dice_roll_nonce = 0
-        st.session_state.dice_theme_color = ""
-    elif st.session_state.get("awaiting_manual_roll", False) and not st.session_state.get("pending_player_input"):
-        st.session_state.awaiting_manual_roll = False
-        st.session_state.captured_manual_roll = None
-        st.session_state.roll_request_id = ""
-        st.session_state.roll_request_tool = ""
-        st.session_state.roll_notation = "1d20"
-        st.session_state.roll_max_face = 20
-        st.session_state.latched_manual_roll = None
-        st.session_state.dice_board_visible = False
-        st.session_state.dice_roll_nonce = 0
-        st.session_state.dice_theme_color = ""
-    elif (
-        st.session_state.get("pending_player_input")
-        and len(st.session_state.get("messages", [])) <= 1
-    ):
-        # Fresh/intro-only sessions must never start in a waiting-for-roll state.
-        st.session_state.awaiting_manual_roll = False
-        st.session_state.pending_player_input = None
-        st.session_state.captured_manual_roll = None
-        st.session_state.roll_request_id = ""
-        st.session_state.roll_request_tool = ""
-        st.session_state.roll_notation = "1d20"
-        st.session_state.roll_max_face = 20
-        st.session_state.latched_manual_roll = None
-        st.session_state.dice_board_visible = False
-        st.session_state.dice_roll_nonce = 0
-        st.session_state.dice_theme_color = ""
+    maybe_resume_pending_turn(engine)
 
-    play_tab, dm_tab = st.tabs(["Player View", "DM Tools"])
+    st.title("Dungeon Master's Companion")
+    st.caption("A plain Streamlit interface for the story engine and its current world state.")
+    render_notice()
+    if st.session_state.get("config_signature") != session_config.reset_signature():
+        st.info("Story setup changes are staged. Reset the session to apply them.")
+
+    play_tab, editor_tab = st.tabs(["Play", "World State"])
 
     with play_tab:
-        st.markdown('<div id="play-layout-anchor"></div>', unsafe_allow_html=True)
-        spacer_col, chat_col, character_col = st.columns([1, 2.4, 1], gap="large")
+        chat_col, state_col = st.columns([2, 1], gap="large")
 
         with chat_col:
-            st.image(PLAYER_BG_PATH, use_container_width=True)
-            messages_container = st.container()
-            with messages_container:
-                for message in st.session_state.get("messages", []):
-                    with st.chat_message(message["role"]):
-                        st.markdown(message["content"])
+            render_messages()
+            render_roll_panel()
 
-            roll_requested = bool(
-                roll_mode == "manual"
-                and st.session_state.get("awaiting_manual_roll", False)
-                and st.session_state.get("pending_player_input")
-                and st.session_state.get("captured_manual_roll") is None
-                and st.session_state.get("latched_manual_roll") is None
+            player_input = st.chat_input(
+                "Describe what your character does...",
+                disabled=is_waiting_for_roll(),
             )
-            st.session_state.roll_requested = roll_requested
-            if roll_requested:
-                _, roll_button_col, _ = st.columns([1, 2.2, 1])
-                with roll_button_col:
-                    roll_clicked = st.button("Roll the Dice", key="manual_roll_trigger", use_container_width=True)
-                if roll_clicked:
-                    st.session_state.dice_board_visible = True
-                    st.session_state.dice_roll_nonce = int(st.session_state.get("dice_roll_nonce", 0)) + 1
-                    st.session_state.dice_theme_color = random.choice(ROLL_THEME_COLORS)
+            if player_input:
+                submit_player_input(engine, player_input, roll_mode=session_config.roll_mode)
 
-            if roll_requested and st.session_state.get("dice_board_visible", False):
-                component_payload = FANTASTIC_DICE_COMPONENT(
-                    active=True,
-                    notation=str(st.session_state.get("roll_notation") or "1d20"),
-                    request_id=str(st.session_state.get("roll_request_id") or ""),
-                    roll_nonce=int(st.session_state.get("dice_roll_nonce", 0)),
-                    theme_color=str(st.session_state.get("dice_theme_color") or ""),
-                    key="fantastic_dice_component",
-                    default=None,
-                )
-                _capture_roll_from_component(component_payload)
+        with state_col:
+            snapshot = engine.snapshot()
+            render_overview(snapshot)
+            render_scene(snapshot)
+            render_story_state(snapshot)
+            render_last_turn()
+            render_world_graph(snapshot)
+            render_debug_trace(display)
 
-            pending_input = st.session_state.get("pending_player_input")
-            captured_roll = st.session_state.get("captured_manual_roll")
-            if pending_input and captured_roll is not None:
-                with st.spinner("Applying dice roll..."):
-                    try:
-                        turn = engine.run_turn(str(pending_input))
-                        response = turn["narration"]["ic"]
-                        st.session_state.last_turn = turn
-                        st.session_state.awaiting_manual_roll = False
-                        st.session_state.pending_player_input = None
-                        st.session_state.captured_manual_roll = None
-                        st.session_state.roll_request_id = ""
-                        st.session_state.roll_request_tool = ""
-                        st.session_state.roll_notation = "1d20"
-                        st.session_state.roll_max_face = 20
-                        st.session_state.latched_manual_roll = None
-                        st.session_state.dice_board_visible = False
-                        st.session_state.dice_theme_color = ""
-                        st.session_state.messages.append({"role": "assistant", "content": response})
-                    except Exception as exc:
-                        message = str(exc)
-                        if ROLL_REQUIRED_SENTINEL in message:
-                            _append_assistant_message_once(ROLL_REQUIRED_MESSAGE)
-                        else:
-                            st.session_state.pending_player_input = None
-                            st.session_state.captured_manual_roll = None
-                            st.session_state.roll_request_id = ""
-                            st.session_state.roll_request_tool = ""
-                            st.session_state.roll_notation = "1d20"
-                            st.session_state.roll_max_face = 20
-                            st.session_state.latched_manual_roll = None
-                            st.session_state.dice_board_visible = False
-                            st.session_state.dice_theme_color = ""
-                            _append_assistant_message_once("The Dungeon Master is unavailable right now.")
-                            st.error(f"Failed to generate a response: {exc}")
-                st.rerun()
-
-            with st.form("chat_form", clear_on_submit=True):
-                player_input = st.text_area(
-                    "Describe what your character does...",
-                    height=90,
-                    label_visibility="collapsed",
-                )
-                submitted = st.form_submit_button("Send")
-
-            if submitted and player_input.strip():
-                if roll_mode == "manual" and roll_requested:
-                    pending_notation = str(st.session_state.get("roll_notation") or "1d20")
-                    _append_assistant_message_once(
-                        f"A roll is still pending. Waiting for the {pending_notation} result."
-                    )
-                    st.rerun()
-
-                st.session_state.messages.append({"role": "user", "content": player_input})
-
-                if roll_mode == "manual":
-                    st.session_state.pending_player_input = player_input
-                    st.session_state.latched_manual_roll = None
-                with st.spinner("The Dungeon Master is thinking..."):
-                    try:
-                        turn = engine.run_turn(player_input)
-                        response = turn["narration"]["ic"]
-                        st.session_state.last_turn = turn
-                        st.session_state.awaiting_manual_roll = False
-                        st.session_state.pending_player_input = None
-                        st.session_state.captured_manual_roll = None
-                        st.session_state.roll_request_id = ""
-                        st.session_state.roll_request_tool = ""
-                        st.session_state.roll_notation = "1d20"
-                        st.session_state.roll_max_face = 20
-                        st.session_state.latched_manual_roll = None
-                        st.session_state.dice_board_visible = False
-                        st.session_state.dice_theme_color = ""
-                    except Exception as exc:
-                        message = str(exc)
-                        if ROLL_REQUIRED_SENTINEL in message:
-                            response = ROLL_REQUIRED_MESSAGE
-                        else:
-                            st.session_state.pending_player_input = None
-                            st.session_state.roll_request_id = ""
-                            st.session_state.roll_request_tool = ""
-                            st.session_state.roll_notation = "1d20"
-                            st.session_state.roll_max_face = 20
-                            st.session_state.latched_manual_roll = None
-                            st.session_state.dice_board_visible = False
-                            st.session_state.dice_theme_color = ""
-                            response = "The Dungeon Master is unavailable right now."
-                            st.error(f"Failed to generate a response: {exc}")
-                st.session_state.messages.append({"role": "assistant", "content": response})
-                st.rerun()
-
-        with character_col:
-            st.subheader("Character")
-            image_container = st.container()
-            with image_container:
-                character_image = st.session_state.get("character_image_upload")
-                if character_image is None:
-                    character_image = st.file_uploader(
-                    "Character image",
-                    type=["png", "jpg", "jpeg", "webp"],
-                    key="character_image_upload",
-                )
-                if character_image:
-                    st.markdown('<div id="character-image-anchor"></div>', unsafe_allow_html=True)
-                    if st.button("Reupload image", key="character_image_reupload"):
-                        st.session_state.character_image_upload = None
-                        st.rerun()
-                    st.image(character_image, use_container_width=True)
-
-            description_default = st.session_state.get("character_description", "")
-            description = st.text_area(
-                "Character description",
-                value=description_default,
-                height=160,
-                key="character_description",
-            )
-            inventory_default = st.session_state.get("character_inventory", "")
-            st.text_area(
-                "Inventory",
-                value=inventory_default,
-                height=140,
-                placeholder="One item per line",
-                key="character_inventory",
-            )
-            stats_default = st.session_state.get("character_stats", "")
-            st.text_area(
-                "Character stats",
-                value=stats_default,
-                height=140,
-                placeholder="e.g., STR 14, DEX 12, CON 13",
-                key="character_stats",
-            )
-
-    with dm_tab:
-        snapshot = engine.snapshot()
-        st.subheader("Campaign Status")
-        if show_status:
-            beat = snapshot.get("beat_state", {})
-            st.markdown(
-                f"**Beat:** {beat.get('current_index', 0) + 1} "
-                f"of {beat.get('total', 0)} - {beat.get('current', '')}"
-            )
-            st.markdown(f"**Current location:** {snapshot.get('current_location') or 'Unknown'}")
-            scene = snapshot.get("scene") or {}
-            st.markdown(f"**Actors here:** {', '.join(scene.get('actors_here') or []) or 'None'}")
-            st.markdown(f"**Items here:** {', '.join(scene.get('items_here') or []) or 'None'}")
-            st.markdown(f"**Story status:** {snapshot.get('story_status') or 'Not set'}")
-            summary = snapshot.get("session_summary") or ""
-            if summary:
-                st.text_area("Session summary", value=summary, height=160)
-        else:
-            st.markdown("Story status display is disabled in the sidebar.")
-
-        st.subheader("World State")
-        if snapshot.get("nodes"):
-            graph_dot = _build_world_state_dot(snapshot)
-            st.graphviz_chart(graph_dot, use_container_width=True)
-            st.caption("Gold = current location. Teal = current scene. Gray = elsewhere.")
-        else:
-            st.markdown("No world-state data yet.")
-
-        if show_debug:
-            last_turn = st.session_state.get("last_turn", {}) or {}
-            debug_data = last_turn.get("llm_trace") or last_turn.get("llm_debug")
-            with st.expander("Debug", expanded=False):
-                if debug_data:
-                    st.json(debug_data, expanded=False)
-                else:
-                    st.markdown("No debug info available yet.")
+    with editor_tab:
+        render_world_state_editor(engine, display)
 
 
 if __name__ == "__main__":
