@@ -96,6 +96,33 @@ def _mentions_unresolved_roll_request(text: str) -> bool:
     )
     return any(marker in cleaned for marker in markers)
 
+
+# Keywords that signal player movement intent.
+_MOVEMENT_PHRASES = frozenset([
+    "go to", "move to", "walk to", "run to", "travel to", "head to",
+    "proceed to", "go back", "return to", "head back", "sneak to",
+    "creep to", "rush to", "climb to", "go inside", "go outside",
+    "enter the", "leave the", "exit the", "go through", "cross to",
+])
+
+# Keywords that signal significant NPC interaction in a turn summary.
+_INTERACTION_WORDS = frozenset([
+    "spoke", "talked", "asked", "told", "said", "replied", "mentioned",
+    "learned", "revealed", "confessed", "heard", "questioned", "confronted",
+    "greeted", "warned", "threatened", "persuaded", "deceived", "admitted",
+    "showed", "gave", "traded", "accused", "denied",
+])
+
+
+def _is_movement_request(text: str) -> bool:
+    lowered = " ".join(str(text or "").lower().split())
+    return any(phrase in lowered for phrase in _MOVEMENT_PHRASES)
+
+
+def _summary_has_interaction(summary: str) -> bool:
+    lowered = " ".join(str(summary or "").lower().split())
+    return any(word in lowered for word in _INTERACTION_WORDS)
+
 class StoryEngine:
 
     def __init__(
@@ -398,13 +425,25 @@ class StoryEngine:
             error_text = str(payload.get("error") or payload.get("reason") or "").lower()
             if "unknown tool" in error_text:
                 return f"Unknown tool `{tool_name}`. Use one of the provided tools."
+            # Give the model actionable feedback when a state-mutation call fails.
+            if tool_name == "move_to_location":
+                reason = str(payload.get("reason") or payload.get("error") or "unknown reason")
+                return (
+                    f"move_to_location failed: {reason}. "
+                    "Set blocked_reason in finalize_turn to explain why movement was blocked."
+                )
+            if tool_name == "write_memory_tool":
+                reason = str(payload.get("reason") or payload.get("error") or "unknown reason")
+                return f"write_memory_tool failed: {reason}. Retry with valid entity_name and non-empty memory."
+            if tool_name == "skill_check":
+                reason = str(payload.get("reason") or payload.get("error") or "unknown reason")
+                return f"skill_check failed: {reason}. Retry with valid entity_key and skill name."
             return None
 
         def response_hook(assistant_text: str, tool_calls: Sequence[Dict[str, Any]], _iteration: int) -> Optional[str]:
             text = str(assistant_text or "").strip()
             if len(tool_calls) > 1:
                 return "Use at most one tool call per response."
-            # Allow tool-only turns (some models emit empty assistant text when they call a tool).
             if not text:
                 if tool_calls:
                     return None
@@ -419,15 +458,69 @@ class StoryEngine:
                 return "If a roll/check is needed, call `skill_check` now. Do not defer rolls to narration."
             return None
 
-        def stop_hook(assistant_text: str, _stop_hook_active: bool) -> Optional[str]:
-            # Terminal verification: only allow the loop to end once
-            # `finalize_turn` has actually been invoked successfully. This
-            # relies on the tool *trace*, not text claims.
+        def stop_hook(assistant_text: str, already_fired: bool) -> Optional[str]:
+            """
+            Gate loop termination on the actual tool trace.
+
+            First stop attempt (already_fired=False): run one-shot world-state
+            verification and push back with specific corrective instructions if
+            any obligation was not fulfilled.
+
+            After that (already_fired=True): allow completion unconditionally to
+            prevent an infinite corrective loop.
+            """
             if turn_ctx.get("finalize") is None:
                 return (
                     "The turn is not finished. Call `finalize_turn` with a turn_summary "
                     "once you have resolved the player's action."
                 )
+
+            # Already pushed back once — trust the model's second attempt.
+            if already_fired:
+                return None
+
+            finalize = turn_ctx["finalize"]
+            issues: list[str] = []
+
+            # ── Obligation 1: player movement ──────────────────────────────
+            # If the player input reads as a movement request AND
+            # move_to_location was never called AND no blocked_reason was set,
+            # the world model still shows the old location. Require the call.
+            if _is_movement_request(player_input):
+                if not successful_tool_calls.get("move_to_location"):
+                    if not str(finalize.get("blocked_reason", "")).strip():
+                        issues.append(
+                            "Player input is a movement request but `move_to_location` was not called "
+                            "and no `blocked_reason` is set. "
+                            "Call `move_to_location` now (the result tells you if it succeeded or why it failed), "
+                            "then re-call `finalize_turn`."
+                        )
+
+            # ── Obligation 2: NPC interaction memory ───────────────────────
+            # If the model queried NPC-specific tools AND the turn_summary
+            # contains interaction words, significant facts were likely
+            # established. Require at least one write_memory_tool call.
+            npc_query_tools = {"get_entity_state", "check_can_interact", "retrieve_memory_tool"}
+            if any(t in successful_tool_calls for t in npc_query_tools):
+                if not successful_tool_calls.get("write_memory_tool"):
+                    summary = finalize.get("turn_summary", "")
+                    if _summary_has_interaction(summary):
+                        issues.append(
+                            "The turn involved NPC interaction (NPC query tools were called, "
+                            "interaction recorded in turn_summary) but `write_memory_tool` was "
+                            "never called. Persist the key fact now, then re-call `finalize_turn`."
+                        )
+
+            if issues:
+                # Clear the finalize payload so the model must re-call finalize_turn
+                # after it fixes the state. The `already_fired` flag prevents this
+                # check from firing more than once.
+                turn_ctx["finalize"] = None
+                return (
+                    "World state not fully updated — fix before finalizing:\n"
+                    + "\n".join(f"• {issue}" for issue in issues)
+                )
+
             return None
 
         agent_prompt = build_agent_prompt(state)
