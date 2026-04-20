@@ -4,6 +4,8 @@ import json
 import os
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
@@ -18,8 +20,10 @@ from orchestrator.app_config import (
     get_roll_mode,
 )
 from orchestrator.runtime_flow.pipeline import StoryEngine
+from orchestrator.runtime_flow.session_state import write_session_checkpoint
 from orchestrator.world_state.entity import DynamicSentenceMemory
 from orchestrator.world_state.entity_tools import retrieve_memory_tool
+from orchestrator.world_state.tool_runtime import set_world_checkpoint_root
 from orchestrator.world_state.world_model import WorldModel, build_world_model
 
 ROLL_REQUIRED_SENTINEL = "__DMC_ROLL_REQUIRED__"
@@ -98,6 +102,7 @@ def ensure_runtime_state() -> None:
     defaults = {
         "messages": [],
         "last_turn": {},
+        "turn_records": [],
         "pending_player_input": None,
         "awaiting_manual_roll": False,
         "captured_manual_roll": None,
@@ -106,9 +111,18 @@ def ensure_runtime_state() -> None:
         "config_signature": "",
         "active_model": "",
         "ui_notice": "",
+        "session_dir": "",
+        "snapshot_files": [],
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
+
+
+def create_streamlit_session_dir() -> Path:
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_dir = Path("state") / f"{stamp}_streamlit_session"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    return session_dir.resolve()
 
 
 def clear_manual_roll_state(*, clear_pending_input: bool) -> None:
@@ -185,6 +199,8 @@ def initialize_session(config: SessionConfig) -> None:
         roll_mode=config.roll_mode,
         manual_roll_provider=streamlit_manual_roll_provider if config.roll_mode == "manual" else None,
     )
+    session_dir = create_streamlit_session_dir()
+    set_world_checkpoint_root(engine.game_state, session_dir / "checkpoints")
 
     intro_text = config.starting_state
     try:
@@ -196,8 +212,18 @@ def initialize_session(config: SessionConfig) -> None:
     st.session_state.orchestrator = engine
     st.session_state.messages = [{"role": "assistant", "content": intro_text}]
     st.session_state.last_turn = {}
+    st.session_state.turn_records = []
     st.session_state.config_signature = config.reset_signature()
     st.session_state.active_model = config.model
+    st.session_state.session_dir = str(session_dir)
+    st.session_state.snapshot_files = []
+
+    try:
+        snapshot_path = write_session_checkpoint(session_dir, engine, 0)
+        st.session_state.snapshot_files = [str(snapshot_path)]
+    except Exception as exc:
+        st.warning(f"Initial snapshot write failed: {exc}")
+
     clear_manual_roll_state(clear_pending_input=True)
 
 
@@ -300,6 +326,9 @@ def build_sidebar(world_defaults: WorldModel) -> tuple[SessionConfig, DisplayOpt
 
         reset_requested = st.button("Reset Session With Current Setup", use_container_width=True)
         st.caption("Model changes apply on the next request. Story setup changes apply only after reset.")
+        session_dir = str(st.session_state.get("session_dir") or "").strip()
+        if session_dir:
+            st.caption(f"Session files: `{session_dir}`")
 
         st.divider()
         show_debug_trace = st.checkbox("Show raw debug trace", value=False)
@@ -352,6 +381,14 @@ def run_turn_with_ui(engine: StoryEngine, player_input: str, *, spinner_text: st
             st.rerun()
 
     st.session_state.last_turn = turn
+    st.session_state.turn_records = [*st.session_state.get("turn_records", []), turn]
+    session_dir = str(st.session_state.get("session_dir") or "").strip()
+    if session_dir:
+        try:
+            snapshot_path = write_session_checkpoint(session_dir, engine, int(turn.get("turn", 0)))
+            st.session_state.snapshot_files = [*st.session_state.get("snapshot_files", []), str(snapshot_path)]
+        except Exception as exc:
+            st.warning(f"Snapshot write failed: {exc}")
     clear_manual_roll_state(clear_pending_input=True)
     append_message("assistant", str(turn.get("narration", {}).get("ic") or "").strip())
     st.rerun()
@@ -667,25 +704,236 @@ def render_story_state(snapshot: dict[str, Any]) -> None:
         st.text(session_summary)
 
 
-def render_last_turn() -> None:
-    last_turn = st.session_state.get("last_turn") or {}
-    if not last_turn:
+def summarize_turn_label(turn: dict[str, Any]) -> str:
+    turn_number = int(turn.get("turn", 0) or 0)
+    summary = " ".join(str(turn.get("turn_summary") or "").split()).strip()
+    if not summary:
+        summary = " ".join(str(turn.get("narration", {}).get("ic") or "").split()).strip()
+    if len(summary) > 72:
+        summary = summary[:72].rstrip() + "..."
+    return f"Turn {turn_number}: {summary or 'No summary'}"
+
+
+def render_trace_messages(messages: list[dict[str, Any]]) -> None:
+    if not messages:
+        st.info("No loop message history was captured for this turn.")
         return
 
-    phase_summaries = last_turn.get("phase_summaries") or {}
-    tool_calls = last_turn.get("tool_calls") or []
-    turn_todo = last_turn.get("turn_todo") or []
+    for index, message in enumerate(messages, start=1):
+        role = str(message.get("role") or "unknown").title()
+        with st.expander(f"{index}. {role}", expanded=False):
+            tool_calls = message.get("tool_calls") or []
+            if tool_calls:
+                st.markdown("**Tool Calls**")
+                st.json(tool_calls, expanded=False)
+            if message.get("tool_name"):
+                st.markdown(f"**Tool Name:** `{message.get('tool_name')}`")
+            if message.get("tool_call_id"):
+                st.markdown(f"**Tool Call ID:** `{message.get('tool_call_id')}`")
+            content = str(message.get("content") or "").strip()
+            if content:
+                st.code(content, language="markdown")
+            else:
+                st.write("No text content.")
 
-    with st.expander("Last Turn Details", expanded=False):
-        if phase_summaries:
-            st.markdown("**Phase Summaries**")
-            st.json(phase_summaries, expanded=False)
-        if tool_calls:
-            st.markdown("**Tool Calls**")
-            st.json(tool_calls, expanded=False)
-        if turn_todo:
-            st.markdown("**Turn Todo**")
-            st.json(turn_todo, expanded=False)
+
+def render_agent_rounds(rounds: list[dict[str, Any]]) -> None:
+    if not rounds:
+        st.info("No loop rounds were recorded for this turn.")
+        return
+
+    for round_info in rounds:
+        iteration = int(round_info.get("iteration", 0) or 0)
+        with st.expander(f"Iteration {iteration}", expanded=False):
+            assistant_text = str(round_info.get("assistant_text") or "").strip()
+            assistant_thinking = str(round_info.get("assistant_thinking") or "").strip()
+            if assistant_text:
+                st.markdown("**Assistant Response**")
+                st.code(assistant_text, language="markdown")
+            if assistant_thinking:
+                st.markdown("**Assistant Thinking**")
+                st.code(assistant_thinking, language="markdown")
+            if round_info.get("tool_calls"):
+                st.markdown("**Requested Tool Calls**")
+                st.json(round_info.get("tool_calls"), expanded=False)
+            if round_info.get("tool_results"):
+                st.markdown("**Tool Results**")
+                st.json(round_info.get("tool_results"), expanded=False)
+            if round_info.get("hook_notes"):
+                st.markdown("**Hook Notes**")
+                st.json(round_info.get("hook_notes"), expanded=False)
+            if round_info.get("response_block_reason"):
+                st.warning(str(round_info.get("response_block_reason")))
+            if round_info.get("stop_block_reason"):
+                st.warning(str(round_info.get("stop_block_reason")))
+
+
+def flatten_memory_delta(reconciliation: dict[str, Any]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    delta = dict(reconciliation.get("delta") or {})
+    for change in delta.get("memory_changes") or []:
+        entity = str(change.get("entity") or "")
+        for line in change.get("added") or []:
+            rows.append({"entity": entity, "change": "added", "memory": str(line)})
+        for line in change.get("removed") or []:
+            rows.append({"entity": entity, "change": "removed", "memory": str(line)})
+    return rows
+
+
+def render_world_delta(reconciliation: dict[str, Any]) -> None:
+    if not reconciliation:
+        st.info("No reconciliation report is available for this turn.")
+        return
+
+    delta = dict(reconciliation.get("delta") or {})
+    player_location = dict(delta.get("player_location") or {})
+    story_status = dict(delta.get("story_status") or {})
+
+    metric_col_1, metric_col_2, metric_col_3 = st.columns(3)
+    with metric_col_1:
+        st.metric("Player Location", player_location.get("after") or "Unknown")
+    with metric_col_2:
+        st.metric("Entities Moved", len(delta.get("entity_location_changes") or []))
+    with metric_col_3:
+        st.metric("Memory Updates", len(delta.get("memory_changes") or []))
+
+    if reconciliation.get("applied_fixes"):
+        st.markdown("**Applied Fixes**")
+        st.json(reconciliation.get("applied_fixes"), expanded=False)
+    if reconciliation.get("validation_errors"):
+        st.markdown("**Validation Errors**")
+        st.json(reconciliation.get("validation_errors"), expanded=False)
+
+    with st.expander("Location / Holder Changes", expanded=False):
+        st.json(
+            {
+                "player_location": player_location,
+                "npc_location_changes": delta.get("npc_location_changes") or [],
+                "entity_location_changes": delta.get("entity_location_changes") or [],
+                "item_holder_changes": delta.get("item_holder_changes") or [],
+            },
+            expanded=False,
+        )
+    with st.expander("Flags / Discovery", expanded=False):
+        st.json(
+            {
+                "story_status": story_status,
+                "discovered_keys": delta.get("discovered_keys") or {},
+                "quest_flag_changes": delta.get("quest_flag_changes") or [],
+            },
+            expanded=False,
+        )
+    with st.expander("World Snapshots", expanded=False):
+        st.json(
+            {
+                "before": reconciliation.get("world_before") or {},
+                "after": reconciliation.get("world_after") or {},
+            },
+            expanded=False,
+        )
+
+
+def render_turn_inspector(display: DisplayOptions) -> None:
+    turn_records = list(st.session_state.get("turn_records") or [])
+    if not turn_records:
+        return
+
+    default_index = max(0, len(turn_records) - 1)
+    selected_turn = st.selectbox(
+        "Inspect Turn",
+        options=list(range(len(turn_records))),
+        index=default_index,
+        format_func=lambda index: summarize_turn_label(turn_records[index]),
+        key="turn_inspector_select",
+    )
+    turn = turn_records[int(selected_turn)]
+    llm_trace = dict(turn.get("llm_trace") or {})
+    agent_trace = dict(llm_trace.get("AGENT") or {})
+    narrate_trace = dict(llm_trace.get("NARRATE") or {})
+    reconciliation = dict(turn.get("reconciliation") or {})
+
+    summary_tab, messages_tab, rounds_tab, world_tab, memory_tab, raw_tab = st.tabs(
+        ["Summary", "LLM Messages", "LLM Rounds", "World Delta", "Memory", "Raw"]
+    )
+
+    with summary_tab:
+        st.markdown(f"**Turn Summary:** {turn.get('turn_summary') or 'None'}")
+        if str(turn.get("blocked_reason") or "").strip():
+            st.markdown(f"**Blocked Reason:** {turn.get('blocked_reason')}")
+        if str(turn.get("narration_focus") or "").strip():
+            st.markdown(f"**Narration Focus:** {turn.get('narration_focus')}")
+        st.markdown("**Narration**")
+        st.write(str(turn.get("narration", {}).get("ic") or "").strip() or "No narration recorded.")
+        if turn.get("phase_summaries"):
+            with st.expander("Phase Summaries", expanded=False):
+                st.json(turn.get("phase_summaries"), expanded=False)
+        if turn.get("tool_calls"):
+            with st.expander("Action Tool Calls", expanded=False):
+                st.json(turn.get("tool_calls"), expanded=False)
+        if turn.get("world_tool_calls"):
+            with st.expander("All World Tool Calls", expanded=False):
+                st.json(turn.get("world_tool_calls"), expanded=False)
+        if turn.get("turn_todo"):
+            with st.expander("Turn Todo", expanded=False):
+                st.json(turn.get("turn_todo"), expanded=False)
+        if agent_trace.get("prompt"):
+            with st.expander("Agent Prompt", expanded=False):
+                st.code(str(agent_trace.get("prompt") or ""), language="markdown")
+        if narrate_trace.get("prompt"):
+            with st.expander("Narration Prompt", expanded=False):
+                st.code(str(narrate_trace.get("prompt") or ""), language="markdown")
+
+    with messages_tab:
+        agent_messages, narrate_attempts = st.tabs(["Agent Loop", "Narration Step"])
+        with agent_messages:
+            render_trace_messages(list(agent_trace.get("messages") or []))
+        with narrate_attempts:
+            attempts = list(narrate_trace.get("attempts") or [])
+            if not attempts:
+                st.info("No narration attempts were captured.")
+            for attempt in attempts:
+                attempt_number = int(attempt.get("attempt", 0) or 0)
+                with st.expander(f"Attempt {attempt_number}", expanded=False):
+                    if attempt.get("prompt"):
+                        st.markdown("**Prompt**")
+                        st.code(str(attempt.get("prompt") or ""), language="markdown")
+                    if attempt.get("raw"):
+                        st.markdown("**Raw Output**")
+                        st.code(str(attempt.get("raw") or ""), language="markdown")
+                    if attempt.get("sections"):
+                        st.markdown("**Parsed Sections**")
+                        st.json(attempt.get("sections"), expanded=False)
+                    if attempt.get("error"):
+                        st.error(str(attempt.get("error")))
+
+    with rounds_tab:
+        render_agent_rounds(list(agent_trace.get("rounds") or []))
+
+    with world_tab:
+        render_world_delta(reconciliation)
+
+    with memory_tab:
+        memory_rows = flatten_memory_delta(reconciliation)
+        if memory_rows:
+            st.dataframe(memory_rows, use_container_width=True)
+        else:
+            st.info("No memory delta was detected for this turn.")
+        if reconciliation.get("turn_memory"):
+            st.markdown("**Turn Memory Entry**")
+            st.code(str(reconciliation.get("turn_memory") or ""), language="markdown")
+        conversation_entry = reconciliation.get("conversation_entry") or {}
+        if conversation_entry:
+            with st.expander("Conversation Entry", expanded=False):
+                st.json(conversation_entry, expanded=False)
+
+    with raw_tab:
+        if llm_trace:
+            st.json(llm_trace, expanded=False)
+        else:
+            st.write("No debug trace is available yet.")
+        if display.show_debug_trace:
+            st.markdown("**Full Turn Payload**")
+            st.json(turn, expanded=False)
 
 
 def render_world_graph(snapshot: dict[str, Any]) -> None:
@@ -1070,11 +1318,18 @@ def render_memory_browser(engine: StoryEngine) -> None:
 def render_snapshot_browser(engine: StoryEngine, display: DisplayOptions) -> None:
     snapshot = engine.snapshot()
     validation_errors = engine.world.validate()
+    session_dir = str(st.session_state.get("session_dir") or "").strip()
+    snapshot_files = list(st.session_state.get("snapshot_files") or [])
 
     if validation_errors:
         st.warning("\n".join(validation_errors))
     else:
         st.success("World model validation passed.")
+
+    if session_dir:
+        st.caption(f"Session snapshot directory: `{session_dir}`")
+    if snapshot_files:
+        st.caption(f"Saved snapshots: {len(snapshot_files)}")
 
     st.subheader("Browse")
     browse_tab, snapshot_tab = st.tabs(["Records", "Snapshot"])
@@ -1161,7 +1416,7 @@ def main() -> None:
             render_overview(snapshot)
             render_scene(snapshot)
             render_story_state(snapshot)
-            render_last_turn()
+            render_turn_inspector(display)
             render_world_graph(snapshot)
             render_debug_trace(display)
 

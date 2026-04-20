@@ -32,9 +32,11 @@ def _recent_history(history_text: str, limit_lines: int = 4) -> str:
     return "\n".join(lines[-limit_lines:])
 
 
-def _latest_recap(summary_text: str) -> str:
+def _recent_recap(summary_text: str, limit_lines: int = 4) -> str:
     lines = [line.strip() for line in str(summary_text or "").splitlines() if line.strip()]
-    return lines[-1] if lines else "None"
+    if not lines:
+        return "None"
+    return "\n".join(lines[-limit_lines:])
 
 
 def _format_lines(items: List[str], *, empty: str) -> str:
@@ -62,7 +64,7 @@ def _entity_info_block(state: PromptState) -> str:
     for key in sorted(state.entity_info):
         info = state.entity_info[key]
         parts = [f"  {key}:"]
-        for label in ("node_type", "location", "connections", "inventory", "holder", "flags"):
+        for label in ("node_type", "location", "connections", "inventory", "holder", "discovered", "flags"):
             value = str(info.get(label, "")).strip()
             if value:
                 parts.append(f"    {label}: {value}")
@@ -98,7 +100,7 @@ def build_mechanics_phase_prompt(
         f"# Turn Todo\n"
         f"{chr(10).join(todo_lines)}\n\n"
         f"# Session Recap\n"
-        f"{_latest_recap(state.session_summary)}"
+        f"{_recent_recap(state.session_summary)}"
     )
 
 
@@ -106,12 +108,16 @@ def build_agent_prompt(state: PromptState) -> str:
     return (
         f"# Player Request\n"
         f"{state.player_input}\n\n"
+        f"# Story Status\n"
+        f"{state.story_status or 'No current story status recorded.'}\n\n"
         f"# Current Scene\n"
         f"{_scene_snapshot_block(state)}\n\n"
+        f"# Relevant World State\n"
+        f"{_entity_info_block(state)}\n\n"
         f"# Session Recap\n"
-        f"{_latest_recap(state.session_summary)}\n\n"
+        f"{_recent_recap(state.session_summary)}\n\n"
         f"# Recent Conversation\n"
-        f"{_recent_history(state.history_text)}"
+        f"{_recent_history(state.history_text, limit_lines=6)}"
     )
 
 
@@ -145,11 +151,17 @@ def build_narrate_prompt(
 # Current Scene
 {_scene_snapshot_block(state)}
 
+# Relevant World State
+{_entity_info_block(state)}
+
+# Story Status
+{state.story_status or 'No current story status recorded.'}
+
 # Session Recap
-{_latest_recap(state.session_summary)}
+{_recent_recap(state.session_summary)}
 
 # Recent Conversation
-{_recent_history(state.history_text)}
+{_recent_history(state.history_text, limit_lines=6)}
 
 # Resolved Turn
 Turn Summary: {turn_summary}

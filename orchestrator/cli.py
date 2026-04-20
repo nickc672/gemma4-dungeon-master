@@ -8,7 +8,8 @@ from typing import Any, Dict
 
 from .app_config import get_default_model, get_default_provider, get_provider_names, get_roll_mode
 from .runtime_flow.pipeline import StoryEngine
-from .world_state.tool_runtime import save_runtime_world_checkpoint, set_world_checkpoint_root
+from .runtime_flow.session_state import write_session_checkpoint
+from .world_state.tool_runtime import set_world_checkpoint_root
 from .world_state.world_model import build_world_model
 
 DEFAULT_PROVIDER = get_default_provider()
@@ -19,17 +20,6 @@ TRACE_SKIP_KEYS = {"TOOL_CALLS", "ACTION_TOOLS", "MOVEMENT_BLOCKED", "TURN_TODO"
 
 def _default_world_model():
     return build_world_model()
-
-
-def _write_session_checkpoint(session_dir: Path, engine: StoryEngine, turn_number: int) -> None:
-    label = f"turn_{int(turn_number):03d}"
-    snapshot = engine.snapshot()
-    (session_dir / f"{label}.json").write_text(
-        json.dumps(snapshot, indent=2),
-        encoding="utf-8",
-    )
-    save_runtime_world_checkpoint(engine.game_state, label)
-
 
 def _prompt_manual_d20_roll(request: Dict[str, Any]) -> int:
     args = dict(request.get("arguments") or {})

@@ -8,6 +8,7 @@ from ..app_config import (
     get_provider_stage_options,
     get_roll_mode,
 )
+from .reconciliation import build_runtime_state_snapshot, reconcile_turn
 from .session_state import BeatTracker, SessionSummary, SnapshotBuilder
 from .step_registry import build_steps
 from ..llm_interaction.prompt_builders import (
@@ -141,9 +142,10 @@ class StoryEngine:
         manual_roll_provider: Optional[Callable[[Dict[str, Any]], int]] = None,
     ) -> None:
         self.history = History()
-        self.summary = SessionSummary(max_chars=1200)
+        self.summary = SessionSummary(max_items=12, max_chars=2400)
         self.turn_index = 0
         self.story_status = ""
+        self.last_turn_result: dict[str, Any] = {}
 
         self.world = world_model or build_world_model(data_dir=world_model_data_dir)
         source_data_dir = resolve_world_model_data_dir(world_model_data_dir)
@@ -248,6 +250,16 @@ class StoryEngine:
                 "discovered": "yes" if adjacent.key in self.game_state.discovered_keys else "no",
             })
 
+        player = self.world.get_entity("Player")
+        if player is not None:
+            player_info = {
+                "node_type": player.entity_type,
+                "location": player.location,
+            }
+            if player.inventory:
+                player_info["inventory"] = ", ".join(player.inventory)
+            entity_info[player.key] = apply_relevant_flags(player.key, player_info)
+
         for key in scene_actors:
             entity = self.world.get_entity(key)
             if entity is None:
@@ -273,7 +285,7 @@ class StoryEngine:
             entity_info[item.key] = apply_relevant_flags(item.key, info)
 
         return PromptState(
-            history_text=self.history.as_text(limit=4),
+            history_text=self.history.as_text(limit=6),
             beat_current=self.beats.progress_text(),
             beat_next=self.beats.next() or "None",
             beat_guide=", ".join(self.beats.beats),
@@ -292,9 +304,10 @@ class StoryEngine:
 
     def run_turn(self, player_input: str):
 
-        trace = {} if self.adapter.verbose else None
+        trace: dict[str, Any] = {}
 
         state = self._make_state(player_input)
+        world_before = build_runtime_state_snapshot(self)
 
         def build_state_snapshot():
             scene = self.world.scene_snapshot(self.game_state.player_location)
@@ -313,8 +326,8 @@ class StoryEngine:
                 },
             }
 
-        if trace is not None:
-            trace["STATE_BEFORE"] = build_state_snapshot()
+        trace["PROMPT_STATE_BEFORE"] = json.loads(json.dumps(vars(state), ensure_ascii=True))
+        trace["STATE_BEFORE"] = build_state_snapshot()
 
         # -----------------------
         # SINGLE AGENT LOOP
@@ -552,8 +565,8 @@ class StoryEngine:
 
         state = self._make_state(player_input)
 
-        if trace is not None:
-            trace["STATE_AFTER_ACTION"] = build_state_snapshot()
+        trace["PROMPT_STATE_AFTER_ACTION"] = json.loads(json.dumps(vars(state), ensure_ascii=True))
+        trace["STATE_AFTER_ACTION"] = build_state_snapshot()
 
         # -----------------------
         # NARRATE (consumes the contracted finalize payload)
@@ -575,14 +588,27 @@ class StoryEngine:
             narrate_prompt,
         )
 
+        next_turn_number = self.turn_index + 1
+        reconciliation = reconcile_turn(
+            self,
+            turn_number=next_turn_number,
+            player_input=player_input,
+            turn_summary=finalize_payload.get("turn_summary", ""),
+            blocked_reason=finalize_payload.get("blocked_reason", ""),
+            narration=narrative,
+            action_results=action_tool_calls,
+            world_before=world_before,
+        )
+
         # -----------------------
         # COMMIT TURN
         # -----------------------
 
         self.history.add_player_turn(player_input)
         self.history.add_dm_turn(narrative)
-        self.summary.add("Recap", _summary_snippet(narrative))
-        self.turn_index += 1
+        self.turn_index = next_turn_number
+
+        state = self._make_state(player_input)
 
         result = {
             "turn": self.turn_index,
@@ -591,30 +617,45 @@ class StoryEngine:
             "player_location": self.game_state.player_location,
             "scene": self.world.scene_snapshot(self.game_state.player_location),
             "tool_calls": action_tool_calls,
+            "world_tool_calls": json.loads(json.dumps(turn_ctx["all_world_tool_calls"], ensure_ascii=True)),
             "turn_todo": json.loads(json.dumps(turn_ctx["todo"])),
             "turn_summary": finalize_payload.get("turn_summary", ""),
             "narration_focus": finalize_payload.get("narration_focus", ""),
             "blocked_reason": finalize_payload.get("blocked_reason", ""),
+            "phase_summaries": {
+                "agent": finalize_payload.get("turn_summary", ""),
+                "narration": _summary_snippet(narrative),
+                "reconciliation": reconciliation.get("story_status", ""),
+            },
+            "reconciliation": reconciliation,
         }
 
-        if trace is not None:
-            trace["AGENT"] = {
-                "status": agent_loop.get("status"),
-                "prompt": agent_prompt,
-                "final_answer": agent_loop.get("final_answer", ""),
-                "rounds": agent_loop.get("rounds", []),
-                "finalize": finalize_payload,
-                "successful_tool_counts": dict(successful_tool_calls),
-            }
-            trace["ACTION_TOOLS"] = action_tool_calls
-            trace["WORLD_TOOLS"] = turn_ctx["all_world_tool_calls"]
-            trace["MOVEMENT_BLOCKED"] = any(
-                call.get("name") == "move_to_location" and not call.get("result", {}).get("success", False)
-                for call in action_tool_calls
-            )
-            trace["NARRATE"] = narrate_debug
-            trace["STATE_AFTER"] = build_state_snapshot()
-            result["llm_trace"] = trace
+        trace["AGENT"] = {
+            "status": agent_loop.get("status"),
+            "prompt": agent_prompt,
+            "final_answer": agent_loop.get("final_answer", ""),
+            "rounds": agent_loop.get("rounds", []),
+            "messages": agent_loop.get("messages", []),
+            "tool_calls": agent_loop.get("tool_calls", []),
+            "finalize": finalize_payload,
+            "successful_tool_counts": dict(successful_tool_calls),
+        }
+        trace["ACTION_TOOLS"] = action_tool_calls
+        trace["WORLD_TOOLS"] = turn_ctx["all_world_tool_calls"]
+        trace["MOVEMENT_BLOCKED"] = any(
+            call.get("name") == "move_to_location" and not call.get("result", {}).get("success", False)
+            for call in action_tool_calls
+        )
+        trace["NARRATE"] = {
+            "prompt": narrate_prompt,
+            **narrate_debug,
+        }
+        trace["RECONCILIATION"] = reconciliation
+        trace["PROMPT_STATE_AFTER_RECONCILE"] = json.loads(json.dumps(vars(state), ensure_ascii=True))
+        trace["STATE_AFTER"] = build_state_snapshot()
+        result["llm_trace"] = trace
+
+        self.last_turn_result = json.loads(json.dumps(result, ensure_ascii=True))
 
         clear_turn_orchestration_ctx(self.game_state)
         return result
