@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from typing import Any
 
 import ollama
@@ -11,12 +12,24 @@ from .base import LLMResponse, ToolCall
 
 logger = logging.getLogger(__name__)
 
+# One provider object per process. Multiple Streamlit sessions (browser tabs)
+# sharing the same Python process all use the same instance so there is no
+# proliferation of HTTP client objects.
+_singleton: OllamaProvider | None = None
+_singleton_lock = threading.Lock()
+
 
 class OllamaProvider:
     """
     LLM provider backed by a local Ollama instance.
-    Translates the canonical message format to Ollama's native format.
+
+    A class-level lock serialises all requests so concurrent Streamlit
+    sessions queue behind each other rather than hitting the Ollama daemon
+    simultaneously. Without serialisation the server may keep multiple model
+    contexts loaded in VRAM at once.
     """
+
+    _request_lock: threading.Lock = threading.Lock()
 
     def chat(
         self,
@@ -36,13 +49,14 @@ class OllamaProvider:
         if tools:
             kwargs["tools"] = tools
 
-        try:
-            response = ollama.chat(**kwargs)
-        except ResponseError as exc:
-            raw = _extract_raw_from_error(exc)
-            if raw:
-                return LLMResponse(text=raw.strip())
-            raise
+        with OllamaProvider._request_lock:
+            try:
+                response = ollama.chat(**kwargs)
+            except ResponseError as exc:
+                raw = _extract_raw_from_error(exc)
+                if raw:
+                    return LLMResponse(text=raw.strip())
+                raise
 
         return _parse_response(response)
 
@@ -158,4 +172,14 @@ def _extract_raw_from_error(exc: Exception) -> str:
     return "" if end == -1 else msg[start:end]
 
 
-__all__ = ["OllamaProvider"]
+def get_shared_instance() -> OllamaProvider:
+    """Return the per-process singleton OllamaProvider."""
+    global _singleton
+    if _singleton is None:
+        with _singleton_lock:
+            if _singleton is None:
+                _singleton = OllamaProvider()
+    return _singleton
+
+
+__all__ = ["OllamaProvider", "get_shared_instance"]

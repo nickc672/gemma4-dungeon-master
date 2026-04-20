@@ -226,8 +226,8 @@ def _default_provider() -> LLMProvider:
         config = get_provider_config(name)
         return create_provider(name, config)
     except Exception:
-        from .providers.ollama import OllamaProvider
-        return OllamaProvider()
+        from .providers.ollama import get_shared_instance
+        return get_shared_instance()
 
 
 def _parse_json(raw: str) -> Dict[str, Any]:

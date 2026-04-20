@@ -23,8 +23,8 @@ def create_provider(provider_name: str, config: dict[str, Any]) -> LLMProvider:
     name = str(provider_name).strip().lower()
 
     if name == "ollama":
-        from .ollama import OllamaProvider
-        return OllamaProvider()
+        from .ollama import get_shared_instance
+        return get_shared_instance()
 
     if name == "openai":
         from .openai import OpenAIProvider
