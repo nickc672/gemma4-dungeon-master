@@ -45,13 +45,22 @@ from .tool_runtime import (
     save_runtime_world_checkpoint,
     set_world_checkpoint_root,
 )
-from .turn_tools import add_turn_note, get_turn_progress, get_turn_todo, set_todo_item_status, set_turn_todo
+from .turn_tools import (
+    FINALIZE_TURN_TOOL_DEFINITION,
+    add_turn_note,
+    finalize_turn,
+    get_turn_progress,
+    get_turn_todo,
+    set_todo_item_status,
+    set_turn_todo,
+)
 
 
 __all__ = [
     "DynamicSentenceMemory",
     "ENTITY_TOOL_DEFINITIONS",
     "Entity",
+    "FINALIZE_TURN_TOOL_DEFINITION",
     "MECHANICS_TOOL_DEFINITIONS",
     "RUNTIME_TOOL_HANDLERS",
     "RUNTIME_TOOL_NAMES",
@@ -73,6 +82,7 @@ __all__ = [
     "ensure_entity_registry",
     "execute_tool",
     "execute_world_model_tool",
+    "finalize_turn",
     "get_current_context",
     "get_entity_state",
     "get_recent_skill_checks",

@@ -12,23 +12,19 @@ from .session_state import BeatTracker, SessionSummary, SnapshotBuilder
 from .step_registry import build_steps
 from ..llm_interaction.prompt_builders import (
     PromptState,
+    build_agent_prompt,
     build_intro_prompt,
-    build_intent_phase_prompt,
-    build_mechanics_phase_prompt,
     build_narrate_prompt,
 )
-from ..llm_interaction.prompt_texts import (
-    PHASE_INTENT_SYSTEM_PROMPT,
-    PHASE_MECHANICS_SYSTEM_PROMPT,
-)
+from ..llm_interaction.prompt_texts import AGENT_SYSTEM_PROMPT
 from ..world_state.story import create_initial_game_state
 from ..world_state.tool_runtime import get_runtime_world_model
 from ..world_state.world_model import WorldModel, build_world_model, resolve_world_model_data_dir
 import json
 import re
 from ..world_state.tools import (
+    FINALIZE_TURN_TOOL_DEFINITION,
     TOOL_DEFINITIONS,
-    TODO_ACTIVE_STATUSES,
     bind_turn_orchestration_ctx,
     clear_turn_orchestration_ctx,
     execute_tool as execute_world_tool,
@@ -271,11 +267,8 @@ class StoryEngine:
 
         trace = {} if self.adapter.verbose else None
 
-        # -----------------------
-        # BUILD STATE SNAPSHOT
-        # -----------------------
-
         state = self._make_state(player_input)
+
         def build_state_snapshot():
             scene = self.world.scene_snapshot(self.game_state.player_location)
             return {
@@ -297,20 +290,21 @@ class StoryEngine:
             trace["STATE_BEFORE"] = build_state_snapshot()
 
         # -----------------------
-        # TURN-LOCAL TODO + PHASE TOOLING (Copilot-style agent loops)
+        # SINGLE AGENT LOOP
+        # The model uses read/write world tools freely and ends the turn by
+        # calling `finalize_turn`, which is a terminal tool whose payload
+        # becomes the narration contract.
         # -----------------------
 
         turn_ctx: Dict[str, Any] = {
-            "phase": "",
+            "phase": "agent",
             "todo": [],
             "todo_revision": 0,
             "todo_summary": "",
             "notes": [],
-            "intent_summary": "",
-            "mechanics_summary": "",
-            "mechanics_status": "",
             "all_world_tool_calls": [],
             "current_location": self.game_state.player_location,
+            "finalize": None,
         }
         action_tool_calls: List[Dict[str, Any]] = []
         bind_turn_orchestration_ctx(self.game_state, turn_ctx)
@@ -321,111 +315,56 @@ class StoryEngine:
             if isinstance(tool, dict) and isinstance(tool.get("function"), dict)
         }
 
-        phase_tool_names = {
-            "intent": [
-                "get_world_scene",
-                "get_world_story",
-                "get_world_location",
-                "list_world_locations",
-                "list_world_entities",
-                "get_world_entity",
-                "list_world_items",
-                "get_world_item",
-                "check_can_interact",
-                "get_current_context",
-                "list_scene_entities",
-                "get_entity_state",
-                "retrieve_memory_tool",
-                "roll_dice",
-                "skill_check",
-                "get_recent_skill_checks",
-            ],
-            "mechanics": [
-                "get_world_scene",
-                "get_world_story",
-                "get_world_location",
-                "list_world_locations",
-                "list_world_entities",
-                "get_world_entity",
-                "list_world_items",
-                "get_world_item",
-                "check_can_interact",
-                "get_current_context",
-                "list_scene_entities",
-                "get_entity_state",
-                "retrieve_memory_tool",
-                "write_memory_tool",
-                "roll_dice",
-                "skill_check",
-                "get_recent_skill_checks",
-                "move_to_location",
-                "move_npc",
-            ],
+        agent_tool_defs: list[dict[str, Any]] = [
+            *world_tools_by_name.values(),
+            FINALIZE_TURN_TOOL_DEFINITION,
+        ]
+        agent_tool_names = {
+            *world_tools_by_name.keys(),
+            "finalize_turn",
         }
 
-        def phase_tools(phase_name: str) -> list[dict[str, Any]]:
-            return [
-                world_tools_by_name[name]
-                for name in phase_tool_names.get(phase_name, [])
-                if name in world_tools_by_name
-            ]
+        # Trace keyed by tool name of calls that actually returned ok.
+        successful_tool_calls: Dict[str, int] = {}
 
-        def compute_todo_counts() -> Dict[str, int]:
-            counts = {
-                "total": len(turn_ctx["todo"]),
-                "pending": 0,
-                "in_progress": 0,
-                "done": 0,
-                "skipped": 0,
-                "blocked": 0,
-            }
-            for item in turn_ctx["todo"]:
-                status = str(item.get("status", "pending")).strip().lower()
-                if status in counts:
-                    counts[status] += 1
-                else:
-                    counts["pending"] += 1
-            return counts
-
-        def phase_tool_executor(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        def tool_executor(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             args = dict(arguments or {})
             turn_ctx["current_location"] = self.game_state.player_location
 
-            # Hidden runtime behavior: in manual roll mode, the UI/CLI can supply the player's d20
-            # while the model still calls normal mechanics tools and receives normal tool payloads.
-            manual_roll_supported = False
-            if tool_name == "skill_check":
-                manual_roll_supported = True
-            elif tool_name == "roll_dice":
-                try:
-                    manual_roll_supported = int(args.get("count", 1)) == 1
-                except (TypeError, ValueError):
-                    manual_roll_supported = False
-
+            # Manual roll passthrough (UI-supplied d20) for skill_check / single-die roll_dice.
+            manual_roll_supported = (
+                tool_name == "skill_check"
+                or (tool_name == "roll_dice" and int(args.get("count", 1) or 1) == 1)
+            )
             if (
                 manual_roll_supported
                 and self.roll_mode == "manual"
                 and callable(self.manual_roll_provider)
                 and "_manual_roll" not in args
             ):
-                roll_request = {
+                args["_manual_roll"] = int(self.manual_roll_provider({
                     "tool_name": tool_name,
-                    "phase": turn_ctx.get("phase", ""),
+                    "phase": "agent",
                     "arguments": dict(args),
-                }
-                args["_manual_roll"] = int(self.manual_roll_provider(roll_request))
+                }))
 
             result = execute_world_tool(tool_name, args, self.game_state)
-            if tool_name in world_tools_by_name:
-                world_call_entry = {
-                    "phase": turn_ctx.get("phase", ""),
-                    "name": tool_name,
-                    "arguments": args,
-                    "result": result,
-                }
-                turn_ctx["all_world_tool_calls"].append(world_call_entry)
 
-            if turn_ctx.get("phase") == "mechanics" and tool_name in {
+            success = result.get("ok")
+            if success is None:
+                success = result.get("success", True)
+
+            turn_ctx["all_world_tool_calls"].append({
+                "phase": "agent",
+                "name": tool_name,
+                "arguments": args,
+                "result": result,
+            })
+
+            if success:
+                successful_tool_calls[tool_name] = successful_tool_calls.get(tool_name, 0) + 1
+
+            if tool_name in {
                 "move_to_location",
                 "move_npc",
                 "roll_dice",
@@ -445,21 +384,8 @@ class StoryEngine:
 
         def pre_tool_use(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             _ = arguments
-            phase_name = str(turn_ctx.get("phase", "")).strip().lower()
-            if tool_name not in world_tools_by_name:
+            if tool_name not in agent_tool_names:
                 return {"allow": False, "reason": f"Unknown tool '{tool_name}'."}
-
-            if phase_name == "intent":
-                intent_blocked_tools = {"move_to_location", "move_npc", "write_memory_tool"}
-                if tool_name in intent_blocked_tools:
-                    return {"allow": False, "reason": f"{tool_name} is deferred to mechanics phase."}
-
-            allowed = set(phase_tool_names.get(phase_name, []))
-            if allowed and tool_name not in allowed:
-                # Soften phase gating: allow known tools outside preferred list
-                # so the loop can recover from imperfect tool selection.
-                return {"allow": True}
-
             return {"allow": True}
 
         def post_tool_use(tool_name: str, arguments: Dict[str, Any], payload: Dict[str, Any]) -> Optional[str]:
@@ -474,22 +400,11 @@ class StoryEngine:
                 return f"Unknown tool `{tool_name}`. Use one of the provided tools."
             return None
 
-        def phase_response_hook(assistant_text: str, tool_calls: Sequence[Dict[str, Any]], _iteration: int) -> Optional[str]:
-            has_tool_calls = len(tool_calls) > 0
+        def response_hook(assistant_text: str, tool_calls: Sequence[Dict[str, Any]], _iteration: int) -> Optional[str]:
             text = str(assistant_text or "").strip()
-            if not text and has_tool_calls:
-                # Allow tool-only turns. Some models emit an empty assistant text
-                # when they decide to call a tool immediately.
-                return None
-            if text and not _extract_labeled_line(text, "Decision Summary"):
-                return "Every response must begin with `Decision Summary: ...`."
-            if not text and not has_tool_calls:
-                return "Every non-tool response must include a short `Decision Summary:` line."
             if len(tool_calls) > 1:
                 return "Use at most one tool call per response."
-            # Some models emit valid tool-only turns with empty assistant text.
-            # Allow that, otherwise tool execution is blocked and loops can stall.
-            text = str(assistant_text or "").strip()
+            # Allow tool-only turns (some models emit empty assistant text when they call a tool).
             if not text:
                 if tool_calls:
                     return None
@@ -497,133 +412,50 @@ class StoryEngine:
             if not _extract_labeled_line(text, "Decision Summary"):
                 return "Every response must begin with `Decision Summary: ...`."
             if (
-                str(turn_ctx.get("phase", "")).strip().lower() == "mechanics"
-                and not tool_calls
+                not tool_calls
                 and _mentions_unresolved_roll_request(text)
+                and turn_ctx.get("finalize") is None
             ):
-                return "If a roll/check is needed, call `skill_check` in mechanics. Do not defer player rolls to narration."
+                return "If a roll/check is needed, call `skill_check` now. Do not defer rolls to narration."
             return None
 
-        def intent_stop_hook(assistant_text: str, _stop_hook_active: bool) -> Optional[str]:
-            if not _extract_labeled_line(assistant_text, "Intent Summary"):
-                return "Intent phase must end with `Intent Summary: ...`."
-            todo_lines = _extract_bullet_items(assistant_text, "Todo")
-            if not todo_lines:
-                return "Intent phase must include a `Todo:` block with 1-4 bullet items."
-            if len(todo_lines) > 4:
-                return "Intent phase todo list must contain at most 4 bullet items."
+        def stop_hook(assistant_text: str, _stop_hook_active: bool) -> Optional[str]:
+            # Terminal verification: only allow the loop to end once
+            # `finalize_turn` has actually been invoked successfully. This
+            # relies on the tool *trace*, not text claims.
+            if turn_ctx.get("finalize") is None:
+                return (
+                    "The turn is not finished. Call `finalize_turn` with a turn_summary "
+                    "once you have resolved the player's action."
+                )
             return None
 
-        def mechanics_stop_hook(assistant_text: str, _stop_hook_active: bool) -> Optional[str]:
-            if not _extract_labeled_line(assistant_text, "Mechanics Summary"):
-                return "Mechanics phase must end with `Mechanics Summary: ...`."
-            return None
+        agent_prompt = build_agent_prompt(state)
 
-        intent_phase_prompt = build_intent_phase_prompt(state)
-
-        turn_ctx["phase"] = "intent"
-        intent_loop = self.adapter.run_tool_loop(
-            stage="phase_intent",
-            system_prompt=PHASE_INTENT_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": intent_phase_prompt}],
-            tools=phase_tools("intent"),
-            tool_executor=phase_tool_executor,
-            max_iterations=8,
+        agent_loop = self.adapter.run_tool_loop(
+            stage="agent",
+            system_prompt=AGENT_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": agent_prompt}],
+            tools=agent_tool_defs,
+            tool_executor=tool_executor,
+            max_iterations=16,
             pre_tool_use=pre_tool_use,
             post_tool_use=post_tool_use,
-            assistant_response_hook=phase_response_hook,
-            stop_hook=intent_stop_hook,
+            assistant_response_hook=response_hook,
+            stop_hook=stop_hook,
         )
 
-        intent_phase_text = str(intent_loop.get("final_answer", "") or "").strip()
-        turn_ctx["intent_summary"] = _extract_labeled_line(intent_phase_text, "Intent Summary")
-        planned_items = _extract_bullet_items(intent_phase_text, "Todo")
+        # Recover a finalize payload even if the model ran out of iterations.
+        finalize_payload = turn_ctx.get("finalize") or {
+            "turn_summary": f"Turn ended without an explicit finalize_turn call. Player action: {player_input}",
+            "narration_focus": "",
+            "blocked_reason": "Agent loop hit max iterations before finalizing.",
+        }
 
-        if planned_items:
-            plan_summary = turn_ctx["intent_summary"] or f"Resolve player action '{player_input}' with grounded mechanics/state checks."
-            execute_world_tool(
-                "set_turn_todo",
-                {"items": _todo_specs_from_lines(planned_items), "plan_summary": plan_summary},
-                self.game_state,
-            )
-            turn_ctx["intent_summary"] = plan_summary
-
-        if not turn_ctx["todo"]:
-            fallback_lines: list[str] = []
-            fallback_lines.append(f"Resolve the player's declared action in context: {player_input}")
-            fallback_summary = turn_ctx["intent_summary"] or f"Resolve player action '{player_input}' with grounded mechanics/state checks."
-            execute_world_tool(
-                "set_turn_todo",
-                {"items": _todo_specs_from_lines(fallback_lines), "plan_summary": fallback_summary},
-                self.game_state,
-            )
-            turn_ctx["intent_summary"] = fallback_summary
-            if trace is not None:
-                trace["INTENT_PHASE_FALLBACK"] = "Generated fallback todo plan because intent phase finished without a plan."
-
-        if not turn_ctx["intent_summary"]:
-            turn_ctx["intent_summary"] = turn_ctx.get("todo_summary") or f"Resolve player action: {player_input}"
-
-        intent_todo_snapshot = json.loads(json.dumps(turn_ctx["todo"]))
-
-        mechanics_handoff = build_mechanics_phase_prompt(
-            state,
-            turn_ctx["intent_summary"],
-            turn_ctx["todo"],
-        )
-
-        turn_ctx["phase"] = "mechanics"
-        mechanics_loop = self.adapter.run_tool_loop(
-            stage="phase_mechanics",
-            system_prompt=PHASE_MECHANICS_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": mechanics_handoff}],
-            tools=phase_tools("mechanics"),
-            tool_executor=phase_tool_executor,
-            max_iterations=12,
-            pre_tool_use=pre_tool_use,
-            post_tool_use=post_tool_use,
-            assistant_response_hook=phase_response_hook,
-            stop_hook=mechanics_stop_hook,
-        )
-
-        mechanics_phase_text = str(mechanics_loop.get("final_answer", "") or "").strip()
-
-        if mechanics_loop.get("status") != "completed":
-            for item in turn_ctx["todo"]:
-                if str(item.get("status", "pending")) in TODO_ACTIVE_STATUSES:
-                    item["status"] = "blocked"
-                    item["resolution"] = "Mechanics phase reached max iterations before resolving this item."
-                    item["used_tool"] = bool(item.get("used_tool", False))
-            if trace is not None:
-                trace["MECHANICS_PHASE_FALLBACK"] = "Mechanics phase hit max iterations; remaining todo items were marked blocked."
-
-        turn_ctx["mechanics_summary"] = _extract_labeled_line(mechanics_phase_text, "Mechanics Summary")
-        if not turn_ctx["mechanics_summary"]:
-            counts = compute_todo_counts()
-            turn_ctx["mechanics_summary"] = (
-                "Mechanics phase completed with todo counts "
-                + json.dumps(counts, ensure_ascii=True)
-            )
-        if mechanics_loop.get("status") == "completed":
-            for item in turn_ctx["todo"]:
-                if str(item.get("status", "pending")) in TODO_ACTIVE_STATUSES:
-                    item["status"] = "done"
-                    item["resolution"] = turn_ctx["mechanics_summary"]
-                    item["used_tool"] = bool(item.get("used_tool", False))
-
-        counts = compute_todo_counts()
-        blocked_count = counts.get("blocked", 0)
-        turn_ctx["mechanics_status"] = "ITEMS_BLOCKED" if blocked_count > 0 else "ALL_ITEMS_RESOLVED"
-
-        # -----------------------
-        # REBUILD STATE WITH UPDATED GAME STATE
-        # -----------------------
-
+        # Rebuild state with the updated game state for narration.
         if self.adapter.verbose:
             print("\n[STATE] Rebuilding state with updated game state")
             print(f"[STATE] Player location: {self.game_state.player_location}")
-            print(f"[STATE] Scene actors: {state.scene_actors}")
-            print(f"[STATE] Scene items: {state.scene_items}")
 
         state = self._make_state(player_input)
 
@@ -631,17 +463,16 @@ class StoryEngine:
             trace["STATE_AFTER_ACTION"] = build_state_snapshot()
 
         # -----------------------
-        # NARRATE (keep existing narrative step + validators)
+        # NARRATE (consumes the contracted finalize payload)
         # -----------------------
 
-        counts = compute_todo_counts()
-        verdict = "revise" if counts.get("blocked", 0) > 0 else "approve"
-        notes = turn_ctx["mechanics_summary"]
-        if turn_ctx.get("notes"):
-            notes = notes + " | Notes: " + " ; ".join(turn_ctx["notes"][-3:])
-
-        narrate_plan = turn_ctx.get("intent_summary") or turn_ctx.get("todo_summary") or player_input
-        narrate_prompt = build_narrate_prompt(state, narrate_plan, verdict, notes, action_tool_calls)
+        narrate_prompt = build_narrate_prompt(
+            state,
+            turn_summary=finalize_payload.get("turn_summary", ""),
+            narration_focus=finalize_payload.get("narration_focus", ""),
+            blocked_reason=finalize_payload.get("blocked_reason", ""),
+            action_results=action_tool_calls,
+        )
 
         if self.adapter.verbose:
             print("\n[NARRATE] Generating narrative with updated state")
@@ -668,31 +499,22 @@ class StoryEngine:
             "scene": self.world.scene_snapshot(self.game_state.player_location),
             "tool_calls": action_tool_calls,
             "turn_todo": json.loads(json.dumps(turn_ctx["todo"])),
-            "phase_summaries": {
-                "intent": turn_ctx.get("intent_summary", ""),
-                "mechanics": turn_ctx.get("mechanics_summary", ""),
-                "mechanics_status": turn_ctx.get("mechanics_status", ""),
-            },
+            "turn_summary": finalize_payload.get("turn_summary", ""),
+            "narration_focus": finalize_payload.get("narration_focus", ""),
+            "blocked_reason": finalize_payload.get("blocked_reason", ""),
         }
 
         if trace is not None:
-            trace["PHASE_INTENT"] = {
-                "status": intent_loop.get("status"),
-                "prompt": intent_phase_prompt,
-                "final_answer": intent_phase_text,
-                "rounds": intent_loop.get("rounds", []),
-                "todo": intent_todo_snapshot,
-            }
-            trace["PHASE_MECHANICS"] = {
-                "status": mechanics_loop.get("status"),
-                "prompt": mechanics_handoff,
-                "final_answer": mechanics_phase_text,
-                "rounds": mechanics_loop.get("rounds", []),
-                "todo_counts": compute_todo_counts(),
+            trace["AGENT"] = {
+                "status": agent_loop.get("status"),
+                "prompt": agent_prompt,
+                "final_answer": agent_loop.get("final_answer", ""),
+                "rounds": agent_loop.get("rounds", []),
+                "finalize": finalize_payload,
+                "successful_tool_counts": dict(successful_tool_calls),
             }
             trace["ACTION_TOOLS"] = action_tool_calls
-            trace["MECHANICS_WORLD_TOOLS"] = turn_ctx["all_world_tool_calls"]
-            trace["TURN_TODO"] = json.loads(json.dumps(turn_ctx["todo"]))
+            trace["WORLD_TOOLS"] = turn_ctx["all_world_tool_calls"]
             trace["MOVEMENT_BLOCKED"] = any(
                 call.get("name") == "move_to_location" and not call.get("result", {}).get("success", False)
                 for call in action_tool_calls

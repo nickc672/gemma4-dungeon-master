@@ -188,6 +188,45 @@ def add_turn_note(
     return {"ok": True, "note": note, "total_notes": len(notes)}
 
 
+def finalize_turn(
+    turn_summary: str,
+    narration_focus: str = "",
+    blocked_reason: str = "",
+    game_state: GameState | None = None,
+) -> dict[str, Any]:
+    """
+    Terminal tool that ends the agent loop. The model calls this once it has
+    used whatever world tools were needed and is ready to hand off to the
+    narrator.
+
+    The payload is stored on the turn ctx under `finalize` and used to build
+    the narration prompt. The loop's stop hook inspects the tool trace for a
+    successful `finalize_turn` call and only permits completion when present.
+    """
+    if game_state is None:
+        raise RuntimeError("Missing game_state context.")
+    ctx = require_turn_orchestration_ctx(game_state)
+
+    summary = str(turn_summary or "").strip()
+    if not summary:
+        raise ValueError("turn_summary cannot be empty")
+
+    focus = str(narration_focus or "").strip()
+    blocked = str(blocked_reason or "").strip()
+
+    ctx["finalize"] = {
+        "turn_summary": summary,
+        "narration_focus": focus,
+        "blocked_reason": blocked,
+    }
+    return {
+        "ok": True,
+        "turn_summary": summary,
+        "narration_focus": focus,
+        "blocked_reason": blocked,
+    }
+
+
 TURN_TODO_TOOL_DEFINITIONS = [
     {
         "type": "function",
@@ -272,9 +311,52 @@ TURN_TODO_TOOL_DEFINITIONS = [
 ]
 
 
+FINALIZE_TURN_TOOL_DEFINITION = {
+    "type": "function",
+    "function": {
+        "name": "finalize_turn",
+        "description": (
+            "Terminal tool. Call exactly once, last, when all needed world "
+            "tools have been used and the turn is resolved. The narrator "
+            "will take over after this call."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "turn_summary": {
+                    "type": "string",
+                    "description": (
+                        "Short factual recap of what was resolved this turn: "
+                        "actions taken, check outcomes, state changes."
+                    ),
+                },
+                "narration_focus": {
+                    "type": "string",
+                    "description": (
+                        "One-line hint to the narrator about what should land "
+                        "in the player-facing response."
+                    ),
+                },
+                "blocked_reason": {
+                    "type": "string",
+                    "description": (
+                        "If the player's action could not be resolved (e.g. "
+                        "invalid target, movement blocked), a short reason; "
+                        "otherwise leave empty."
+                    ),
+                },
+            },
+            "required": ["turn_summary"],
+        },
+    },
+}
+
+
 __all__ = [
+    "FINALIZE_TURN_TOOL_DEFINITION",
     "TURN_TODO_TOOL_DEFINITIONS",
     "add_turn_note",
+    "finalize_turn",
     "get_turn_progress",
     "get_turn_todo",
     "set_todo_item_status",

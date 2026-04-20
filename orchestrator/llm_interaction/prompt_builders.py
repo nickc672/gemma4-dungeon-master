@@ -70,61 +70,14 @@ def _entity_info_block(state: PromptState) -> str:
     return "\n".join(lines)
 
 
-def build_intent_phase_prompt(state: PromptState) -> str:
-    return (
-        f"# Player Request\n"
-        f"{state.player_input}\n\n"
-        f"# Current Scene\n"
-        f"{_scene_snapshot_block(state)}\n\n"
-        f"# Session Recap\n"
-        f"{_latest_recap(state.session_summary)}\n\n"
-        f"# Recent Conversation\n"
-        f"{_recent_history(state.history_text)}"
-    )
-
-
-def build_narrate_prompt(
-    state: PromptState,
-    plan: str,
-    verdict: str,
-    notes: str,
-    action_results: list[dict] | None = None,
-) -> str:
-    action_summary = ""
-    if action_results:
-        lines = []
-        for tool_call in action_results:
-            result = dict(tool_call.get("result") or {})
-            reason = str(result.get("reason") or result.get("message") or "").strip()
-            lines.append(f"- {tool_call.get('name')}: {reason or ('Success' if result.get('success') else 'Failed')}")
-        action_summary = "\n\n# Actions Executed\n" + "\n".join(lines)
-
-    return f"""# Player Request
-{state.player_input}
-
-# Current Scene
-{_scene_snapshot_block(state)}
-
-# Session Recap
-{_latest_recap(state.session_summary)}
-
-# Recent Conversation
-{_recent_history(state.history_text)}
-
-# Resolved Turn State
-Intent Summary: {plan}
-Resolution Status: {verdict}
-Mechanics Summary: {notes}
-{action_summary}
-
----
-
-Now generate a DM response to the player's latest input using the current scene and resolved turn state above.
-"""
+# Legacy builders kept for benchmark/runner.py imports. The live runtime
+# uses build_agent_prompt below.
+def build_intent_phase_prompt(state: "PromptState") -> str:
+    return build_agent_prompt(state)
 
 
 def build_mechanics_phase_prompt(
-    state: PromptState,
+    state: "PromptState",
     intent_summary: str,
     todo_items: list[dict[str, Any]],
 ) -> str:
@@ -147,6 +100,66 @@ def build_mechanics_phase_prompt(
         f"# Session Recap\n"
         f"{_latest_recap(state.session_summary)}"
     )
+
+
+def build_agent_prompt(state: PromptState) -> str:
+    return (
+        f"# Player Request\n"
+        f"{state.player_input}\n\n"
+        f"# Current Scene\n"
+        f"{_scene_snapshot_block(state)}\n\n"
+        f"# Session Recap\n"
+        f"{_latest_recap(state.session_summary)}\n\n"
+        f"# Recent Conversation\n"
+        f"{_recent_history(state.history_text)}"
+    )
+
+
+def build_narrate_prompt(
+    state: PromptState,
+    *,
+    turn_summary: str,
+    narration_focus: str,
+    blocked_reason: str,
+    action_results: list[dict] | None = None,
+) -> str:
+    action_summary = ""
+    if action_results:
+        lines = []
+        for tool_call in action_results:
+            result = dict(tool_call.get("result") or {})
+            reason = str(result.get("reason") or result.get("message") or "").strip()
+            success = result.get("ok")
+            if success is None:
+                success = result.get("success", True)
+            label = "Success" if success else "Failed"
+            lines.append(f"- {tool_call.get('name')}: {reason or label}")
+        action_summary = "\n\n# Actions Executed\n" + "\n".join(lines)
+
+    blocked_block = f"\n# Blocked Reason\n{blocked_reason}" if str(blocked_reason).strip() else ""
+    focus_block = str(narration_focus).strip() or "(none)"
+
+    return f"""# Player Request
+{state.player_input}
+
+# Current Scene
+{_scene_snapshot_block(state)}
+
+# Session Recap
+{_latest_recap(state.session_summary)}
+
+# Recent Conversation
+{_recent_history(state.history_text)}
+
+# Resolved Turn
+Turn Summary: {turn_summary}
+Narration Focus: {focus_block}{blocked_block}
+{action_summary}
+
+---
+
+Now generate a DM response to the player's latest input using the current scene and the resolved turn above.
+"""
 
 
 def build_intro_prompt(state: PromptState) -> str:

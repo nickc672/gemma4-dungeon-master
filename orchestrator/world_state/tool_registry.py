@@ -16,8 +16,10 @@ from .scene_tools import (
 )
 from .story import GameState
 from .turn_tools import (
+    FINALIZE_TURN_TOOL_DEFINITION,
     TURN_TODO_TOOL_DEFINITIONS,
     add_turn_note,
+    finalize_turn,
     get_turn_progress,
     get_turn_todo,
     set_todo_item_status,
@@ -45,6 +47,7 @@ RUNTIME_TOOL_HANDLERS: Dict[str, RuntimeToolHandler] = {
     "set_todo_item_status": set_todo_item_status,
     "get_turn_progress": get_turn_progress,
     "add_turn_note": add_turn_note,
+    "finalize_turn": finalize_turn,
     "check_can_interact": check_can_interact,
     "get_current_context": get_current_context,
     "move_to_location": move_to_location,
@@ -90,6 +93,7 @@ TOOL_DEFINITION_GROUPS = {
     "entity": ENTITY_TOOL_DEFINITIONS,
     "mechanics": MECHANICS_TOOL_DEFINITIONS,
     "world": WORLD_MODEL_READ_TOOL_DEFINITIONS,
+    "finalize": [FINALIZE_TURN_TOOL_DEFINITION],
 }
 
 TOOL_NAMES_BY_GROUP = {
