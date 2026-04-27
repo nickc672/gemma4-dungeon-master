@@ -1,0 +1,245 @@
+[
+  {
+    "key": "Arcane Chalk Fragment",
+    "name": "Arcane Chalk Fragment",
+    "description": "A chipped stick of silvery chalk used for ward circles and memory-binding sigils.",
+    "holder_kind": "location",
+    "holder_key": "Wizard's House",
+    "portable": true,
+    "tags": [
+      "arcane",
+      "clue",
+      "ritual"
+    ]
+  },
+  {
+    "key": "Barracks Keyring",
+    "name": "Barracks Keyring",
+    "description": "Iron keys for holding lockers, armory racks, and patrol report cabinets.",
+    "holder_kind": "entity",
+    "holder_key": "Captain Varr",
+    "portable": true,
+    "tags": [
+      "key_item",
+      "watch"
+    ]
+  },
+  {
+    "key": "Bent Lockpick Set",
+    "name": "Bent Lockpick Set",
+    "description": "A wrapped set of picks missing one fine hook, likely used hard against stubborn locks.",
+    "holder_kind": "entity",
+    "holder_key": "Street Urchin Pip",
+    "portable": true,
+    "tags": [
+      "tool",
+      "rogue",
+      "contraband"
+    ]
+  },
+  {
+    "key": "Bronze Fountain Coin",
+    "name": "Bronze Fountain Coin",
+    "description": "A battered bronze coin wedged between the stones of the central fountain.",
+    "holder_kind": "location",
+    "holder_key": "Town Square",
+    "portable": true,
+    "tags": [
+      "coin",
+      "minor_clue"
+    ]
+  },
+  {
+    "key": "Carved Driftwood Charm",
+    "name": "Carved Driftwood Charm",
+    "description": "A piece of pale driftwood carved into the shape of a curling wave, hung on a faded blue cord. It smells faintly of incense and sea-salt.",
+    "holder_kind": "location",
+    "holder_key": "Old Shrine",
+    "portable": true,
+    "tags": [
+      "charm",
+      "religious",
+      "token"
+    ]
+  },
+  {
+    "key": "Cellar Brass Ring",
+    "name": "Cellar Brass Ring",
+    "description": "A brass keyring with one polished key worn smooth from daily use at the Copper Cup storeroom door.",
+    "holder_kind": "entity",
+    "holder_key": "Mara",
+    "portable": true,
+    "tags": [
+      "key_item",
+      "tavern",
+      "code_access"
+    ]
+  },
+  {
+    "key": "Cracked Spyglass",
+    "name": "Cracked Spyglass",
+    "description": "A once-fine brass spyglass with a hairline crack across one lens. It smells faintly of salt and oil and bears tiny etchings matching the town's crest.",
+    "holder_kind": "location",
+    "holder_key": "Harbor Gate",
+    "portable": true,
+    "tags": [
+      "tool",
+      "harbor",
+      "clue"
+    ]
+  },
+  {
+    "key": "Frayed Mooring Rope",
+    "name": "Frayed Mooring Rope",
+    "description": "A length of mooring rope stained a darker color near one end. Up close, the fibers look as though they were cut more than worn through by the sea.",
+    "holder_kind": "location",
+    "holder_key": "Docks",
+    "portable": true,
+    "tags": [
+      "clue",
+      "harbor",
+      "forensic"
+    ]
+  },
+  {
+    "key": "Guard's Lost Signet",
+    "name": "Guard's Lost Signet",
+    "description": "A small silver signet ring bearing the town's crest, scuffed as though it has been dragged along stone. It looks recently dropped.",
+    "holder_kind": "location",
+    "holder_key": "Watch Barracks",
+    "portable": true,
+    "tags": [
+      "signet",
+      "watch",
+      "clue"
+    ]
+  },
+  {
+    "key": "Hidden Alley Knife",
+    "name": "Hidden Alley Knife",
+    "description": "A narrow-bladed knife tucked behind a loose brick at knee height. Its handle is wrapped in worn blue cloth, and a faint rust stain darkens the edge.",
+    "holder_kind": "location",
+    "holder_key": "East Alley",
+    "portable": true,
+    "tags": [
+      "weapon",
+      "clue",
+      "concealed"
+    ]
+  },
+  {
+    "key": "Hidden Scrap",
+    "name": "Hidden Scrap",
+    "description": "A grease-stained note tucked behind a loose crate: 'cellar restock / upstairs lock is our wedding anniversary date'.",
+    "holder_kind": "location",
+    "holder_key": "Bar Counter",
+    "portable": true,
+    "tags": [
+      "note",
+      "clue",
+      "code_hint"
+    ]
+  },
+  {
+    "key": "Night Patrol Logbook",
+    "name": "Night Patrol Logbook",
+    "description": "A worn ledger listing patrol routes with several entries crossed out and rewritten.",
+    "holder_kind": "location",
+    "holder_key": "Watch Barracks",
+    "portable": true,
+    "tags": [
+      "document",
+      "watch",
+      "clue"
+    ]
+  },
+  {
+    "key": "Salt-Stained Prayer Beads",
+    "name": "Salt-Stained Prayer Beads",
+    "description": "A loop of smooth wooden beads, crusted with a thin line of salt where they rest against wet robes. Some of the beads are carved with tiny wave symbols.",
+    "holder_kind": "location",
+    "holder_key": "Temple of the Tide",
+    "portable": true,
+    "tags": [
+      "religious",
+      "clue",
+      "temple"
+    ]
+  },
+  {
+    "key": "Shattered Lantern Glass",
+    "name": "Shattered Lantern Glass",
+    "description": "A pouch of carefully collected lantern shards from the bridge, some edges marked with dried reddish residue.",
+    "holder_kind": "location",
+    "holder_key": "South Bridge",
+    "portable": true,
+    "tags": [
+      "clue",
+      "forensic"
+    ]
+  },
+  {
+    "key": "Silver Memory Vial",
+    "name": "Silver Memory Vial",
+    "description": "A stoppered silver vial etched with runes designed to hold a single memory imprint for later restoration.",
+    "holder_kind": "entity",
+    "holder_key": "Town Wizard Arlen",
+    "portable": true,
+    "tags": [
+      "arcane",
+      "memory_magic",
+      "high_value"
+    ]
+  },
+  {
+    "key": "Smugglers' Ledger",
+    "name": "Smugglers' Ledger",
+    "description": "A slim ledger bound in cracked leather, its pages filled with coded notes about shipments, routes, and initials. A few entries are smudged with what looks like river-mud.",
+    "holder_kind": "location",
+    "holder_key": "Warehouse Row",
+    "portable": true,
+    "tags": [
+      "clue",
+      "document",
+      "contraband"
+    ]
+  },
+  {
+    "key": "Wax-Sealed Incident Packet",
+    "name": "Wax-Sealed Incident Packet",
+    "description": "A tied packet of witness statements and guard notes marked for the mayors desk.",
+    "holder_kind": "location",
+    "holder_key": "Town Hall",
+    "portable": true,
+    "tags": [
+      "document",
+      "evidence"
+    ]
+  },
+  {
+    "key": "Weathered Notice",
+    "name": "Weathered Notice",
+    "description": "A curling parchment describing strange lights and disturbances near the old well.",
+    "holder_kind": "location",
+    "holder_key": "Town Hall",
+    "portable": true,
+    "tags": [
+      "notice",
+      "lead",
+      "document"
+    ]
+  },
+  {
+    "key": "Woodcutter's Axe",
+    "name": "Woodcutter's Axe",
+    "description": "A heavy ash-wood axe with a nicked steel head. The haft has fresh grip marks and old dark staining near the pommel.",
+    "holder_kind": "entity",
+    "holder_key": "Mitch",
+    "portable": true,
+    "tags": [
+      "tool",
+      "weapon",
+      "suspicious"
+    ]
+  }
+]

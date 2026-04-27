@@ -69,25 +69,6 @@ def _normalize_turn_todo_item(raw: Any, item_id: int) -> Dict[str, Any]:
         "used_tool": False,
     }
 
-def _normalize_intended_actions(raw: Any) -> list[dict[str, Any]]:
-    if not isinstance(raw, list):
-        return []
-    cleaned: list[dict[str, Any]] = []
-    for entry in raw:
-        if not isinstance(entry, dict):
-            continue
-        kind = str(entry.get("kind", "")).strip().lower()
-        if not kind:
-            continue
-        cleaned.append({
-            "kind": kind,
-            "target": str(entry.get("target", "")).strip(),
-            "destination": str(entry.get("destination", "")).strip(),
-            "memory_text": str(entry.get("memory_text", "")).strip(),
-            "note": str(entry.get("note", "")).strip(),
-        })
-    return cleaned
-
 
 def set_turn_todo(
     items: list[Any],
@@ -211,7 +192,6 @@ def finalize_turn(
     turn_summary: str,
     narration_focus: str = "",
     blocked_reason: str = "",
-    intended_actions: list | None = None,
     game_state: GameState | None = None,
 ) -> dict[str, Any]:
     """
@@ -221,9 +201,6 @@ def finalize_turn(
 
     The payload is stored on the turn ctx under `finalize` and used to build
     the narration prompt and the Phase 2 writer prompt.
-
-    intended_actions is a list of structured hints describing what state
-    changes should be applied during Phase 2.
     """
     if game_state is None:
         raise RuntimeError("Missing game_state context.")
@@ -235,20 +212,17 @@ def finalize_turn(
 
     focus = str(narration_focus or "").strip()
     blocked = str(blocked_reason or "").strip()
-    actions = _normalize_intended_actions(intended_actions)
 
     ctx["finalize"] = {
         "turn_summary": summary,
         "narration_focus": focus,
         "blocked_reason": blocked,
-        "intended_actions": actions,
     }
     return {
         "ok": True,
         "turn_summary": summary,
         "narration_focus": focus,
         "blocked_reason": blocked,
-        "intended_actions": actions,
     }
 
 
@@ -361,9 +335,8 @@ FINALIZE_TURN_TOOL_DEFINITION = {
         "description": (
             "Terminal tool for Phase 1. Call exactly once, last, when all "
             "needed read and mechanics tools have been used and the turn is "
-            "resolved. The narrator and the writer phase will run after this "
-            "call. State changes (movement, memory writes) are applied later "
-            "in Phase 2."
+            "resolved. The narrator and writer phase run automatically after "
+            "this call."
         ),
         "parameters": {
             "type": "object",
@@ -372,7 +345,7 @@ FINALIZE_TURN_TOOL_DEFINITION = {
                     "type": "string",
                     "description": (
                         "Short factual recap of what was resolved this turn: "
-                        "actions taken, check outcomes, intended state changes."
+                        "actions taken, check outcomes, what the player did."
                     ),
                 },
                 "narration_focus": {
@@ -389,54 +362,6 @@ FINALIZE_TURN_TOOL_DEFINITION = {
                         "invalid target, movement blocked), a short reason; "
                         "otherwise leave empty."
                     ),
-                },
-                "intended_actions": {
-                    "type": "array",
-                    "description": (
-                        "Structured hints for the writer phase about what "
-                        "state changes should be applied. Each item describes "
-                        "one intended change."
-                    ),
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "kind": {
-                                "type": "string",
-                                "enum": [
-                                    "player_move",
-                                    "npc_move",
-                                    "memory_for_entity",
-                                ],
-                                "description": (
-                                    "Type of state change. player_move uses "
-                                    "destination. npc_move uses target and "
-                                    "destination. memory_for_entity uses "
-                                    "target and memory_text."
-                                ),
-                            },
-                            "target": {
-                                "type": "string",
-                                "description": (
-                                    "Entity key for npc_move or "
-                                    "memory_for_entity."
-                                ),
-                            },
-                            "destination": {
-                                "type": "string",
-                                "description": (
-                                    "Location key for player_move and npc_move."
-                                ),
-                            },
-                            "memory_text": {
-                                "type": "string",
-                                "description": (
-                                    "Memory sentence for memory_for_entity."
-                                ),
-                            },
-                            "note": {"type": "string"},
-                        },
-                        "required": ["kind"],
-                    },
                 },
             },
             "required": ["turn_summary"],

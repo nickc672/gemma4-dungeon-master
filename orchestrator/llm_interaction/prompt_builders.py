@@ -99,6 +99,39 @@ def _format_lines(items: List[str], *, empty: str) -> str:
     return "\n".join(f"- {item}" for item in cleaned)
 
 
+def _args_summary(args: dict) -> str:
+    """Compact one-line summary of tool call arguments for display in prompts."""
+    parts = []
+    for k, v in (args or {}).items():
+        if k.startswith("_"):
+            continue
+        val = str(v)
+        if len(val) > 40:
+            val = val[:40] + "…"
+        parts.append(f"{k}={val!r}")
+    return ", ".join(parts)
+
+
+def _format_tool_call_log(tool_calls: list[dict] | None) -> str:
+    """Format a list of tool call dicts into a readable log string."""
+    if not tool_calls:
+        return "- (none)"
+    lines = []
+    for call in tool_calls:
+        result = call.get("result") or {}
+        ok = result.get("ok")
+        if ok is None:
+            ok = result.get("success", True)
+        label = "ok" if ok else "FAIL"
+        reason = str(result.get("reason") or result.get("message") or "").strip()
+        args_str = _args_summary(call.get("arguments") or {})
+        entry = f"- {call.get('name')}({args_str}): {label}"
+        if reason:
+            entry += f" — {reason}"
+        lines.append(entry)
+    return "\n".join(lines)
+
+
 def _scene_snapshot_block(
     state: PromptState,
     *,
@@ -187,7 +220,7 @@ def build_narrate_prompt(
     narration_focus: str,
     blocked_reason: str,
     action_results: list[dict] | None = None,
-    intended_actions: list[dict] | None = None,
+    phase_one_tool_calls: list[dict] | None = None,
     cfg: PromptConfig = DEFAULT_PROMPT_CONFIG,
 ) -> str:
     sections: list[str] = []
@@ -222,10 +255,6 @@ def build_narrate_prompt(
             f"# Recent Conversation\n{_recent_history(state.history_text, limit_lines=6)}"
         )
 
-    # Resolved turn - always included, this is the core of what the narrator needs
-    focus_block = str(narration_focus).strip() or "(none)"
-    blocked_block = f"\nBlocked Reason: {blocked_reason}" if str(blocked_reason).strip() else ""
-
     action_summary = ""
     if action_results:
         lines = []
@@ -239,28 +268,13 @@ def build_narrate_prompt(
             lines.append(f"- {tool_call.get('name')}: {reason or label}")
         action_summary = "\n\n# Phase 1 Mechanics\n" + "\n".join(lines)
 
-    intended_summary = ""
-    if intended_actions:
-        intended_lines = []
-        for action in intended_actions:
-            kind = str(action.get("kind", "")).strip()
-            target = str(action.get("target", "")).strip()
-            destination = str(action.get("destination", "")).strip()
-            memory_text = str(action.get("memory_text", "")).strip()
-            descriptors = []
-            if target:
-                descriptors.append(f"target={target}")
-            if destination:
-                descriptors.append(f"destination={destination}")
-            if memory_text:
-                descriptors.append(f"memory_text={memory_text}")
-            intended_lines.append(
-                f"- {kind} ({', '.join(descriptors) or 'no details'})"
-            )
-        intended_summary = (
-            "\n\n# Intended State Changes (will be applied after narration)\n"
-            + "\n".join(intended_lines)
-        )
+    # Full Phase 1 tool call log
+    tool_log = ""
+    if phase_one_tool_calls:
+        tool_log = "\n\n# Phase 1 Tool Call Log\n" + _format_tool_call_log(phase_one_tool_calls)
+
+    focus_block = str(narration_focus).strip() or "(none)"
+    blocked_block = f"\nBlocked Reason: {blocked_reason}" if str(blocked_reason).strip() else ""
 
     sections.append(
         f"# Resolved Turn\n"
@@ -268,7 +282,7 @@ def build_narrate_prompt(
         f"Narration Focus: {focus_block}"
         f"{blocked_block}"
         f"{action_summary}"
-        f"{intended_summary}"
+        f"{tool_log}"
     )
 
     sections.append(
@@ -288,31 +302,13 @@ def build_phase_two_prompt(
     turn_summary: str,
     narration_focus: str,
     blocked_reason: str,
-    intended_actions: list[dict] | None,
+    phase_one_tool_calls: list[dict] | None,
     narration: str,
     action_results: list[dict] | None,
     world_before: dict,
     cfg: PromptConfig = DEFAULT_PROMPT_CONFIG,
 ) -> str:
-    intended_lines: list[str] = []
-    for action in intended_actions or []:
-        kind = str(action.get("kind", "")).strip()
-        target = str(action.get("target", "")).strip()
-        destination = str(action.get("destination", "")).strip()
-        memory_text = str(action.get("memory_text", "")).strip()
-        note = str(action.get("note", "")).strip()
-        descriptors: list[str] = []
-        if target:
-            descriptors.append(f"target={target}")
-        if destination:
-            descriptors.append(f"destination={destination}")
-        if memory_text:
-            descriptors.append(f"memory_text={memory_text}")
-        if note:
-            descriptors.append(f"note={note}")
-        intended_lines.append(f"- {kind} ({', '.join(descriptors) or 'no details'})")
-    if not intended_lines:
-        intended_lines.append("- (none)")
+    tool_log = _format_tool_call_log(phase_one_tool_calls)
 
     action_lines: list[str] = []
     if cfg.p2_action_results:
@@ -346,12 +342,10 @@ def build_phase_two_prompt(
 
     sections.append(f"# Narration Shown to Player\n{narration}")
 
-    sections.append(
-        f"# Intended Actions from Phase 1\n" + "\n".join(intended_lines)
-    )
+    sections.append(f"# Phase 1 Tool Call Log\n{tool_log}")
 
     sections.append(
-        f"# Phase 1 Tool Results (rolls, checks)\n" + "\n".join(action_lines)
+        f"# Phase 1 Mechanics Results (rolls, checks)\n" + "\n".join(action_lines)
     )
 
     if cfg.p2_player_location_before:

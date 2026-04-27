@@ -536,12 +536,15 @@ class StoryEngine:
             "turn_summary": f"Turn ended without an explicit finalize_turn call. Player action: {player_input}",
             "narration_focus": "",
             "blocked_reason": "Phase 1 hit max iterations before finalizing.",
-            "intended_actions": [],
         }
 
         # =====================================================
         # NARRATION (against pre-write state)
         # =====================================================
+
+        phase_one_tool_calls = [
+            c for c in turn_ctx["all_world_tool_calls"] if c.get("phase") == "phase_one"
+        ]
 
         narrate_prompt = build_narrate_prompt(
             state,
@@ -549,7 +552,7 @@ class StoryEngine:
             narration_focus=finalize_payload.get("narration_focus", ""),
             blocked_reason=finalize_payload.get("blocked_reason", ""),
             action_results=action_tool_calls,
-            intended_actions=finalize_payload.get("intended_actions", []),
+            phase_one_tool_calls=phase_one_tool_calls,
         )
 
         if self.adapter.verbose:
@@ -675,44 +678,23 @@ class StoryEngine:
                 return None
 
             issues: list[str] = []
-            intended = finalize_payload.get("intended_actions") or []
 
-            move_intended = any(
-                str(a.get("kind", "")).strip().lower() == "player_move"
-                for a in intended
-            )
+            # Movement enforcement: if the player requested movement and it wasn't
+            # blocked, Phase 2 should have called move_to_location.
             move_called_in_phase_two = any(
                 call.get("phase") == "phase_two"
                 and call.get("name") == "move_to_location"
                 and _tool_call_succeeded(call)
                 for call in turn_ctx["all_world_tool_calls"]
             )
-            if (move_intended or _is_movement_request(player_input)):
-                if not move_called_in_phase_two:
-                    if not str(finalize_payload.get("blocked_reason", "")).strip():
-                        issues.append(
-                            "Player movement was intended or requested but `move_to_location` "
-                            "was not called in this phase. Call it now, then re-call finalize_writes."
-                        )
+            if _is_movement_request(player_input) and not move_called_in_phase_two:
+                if not str(finalize_payload.get("blocked_reason", "")).strip():
+                    issues.append(
+                        "Player movement was requested but `move_to_location` "
+                        "was not called in this phase. Call it now, then re-call finalize_writes."
+                    )
 
-            npc_move_intended = any(
-                str(a.get("kind", "")).strip().lower() == "npc_move"
-                for a in intended
-            )
-            npc_move_called = any(
-                call.get("phase") == "phase_two"
-                and call.get("name") == "move_npc"
-                and _tool_call_succeeded(call)
-                for call in turn_ctx["all_world_tool_calls"]
-            )
-            if npc_move_intended and not npc_move_called:
-                issues.append(
-                    "Phase 1 intended an NPC move but `move_npc` was not called. "
-                    "Apply it now, then re-call finalize_writes."
-                )
-
-            # Memory write enforcement: required on every turn except trivial
-            # ones (greetings, "ok", "thanks").
+            # Memory write enforcement: required on every turn except trivial ones.
             memory_written_in_phase_two = any(
                 call.get("phase") == "phase_two"
                 and call.get("name") == "write_memory_tool"
@@ -743,7 +725,7 @@ class StoryEngine:
             turn_summary=finalize_payload.get("turn_summary", ""),
             narration_focus=finalize_payload.get("narration_focus", ""),
             blocked_reason=finalize_payload.get("blocked_reason", ""),
-            intended_actions=finalize_payload.get("intended_actions", []),
+            phase_one_tool_calls=phase_one_tool_calls,
             narration=narrative,
             action_results=action_tool_calls,
             world_before=world_before,
@@ -806,7 +788,6 @@ class StoryEngine:
             "turn_summary": finalize_payload.get("turn_summary", ""),
             "narration_focus": finalize_payload.get("narration_focus", ""),
             "blocked_reason": finalize_payload.get("blocked_reason", ""),
-            "intended_actions": list(finalize_payload.get("intended_actions") or []),
             "writes_summary": finalize_writes_payload.get("writes_summary", ""),
             "phase_summaries": {
                 "phase_one": finalize_payload.get("turn_summary", ""),
@@ -841,11 +822,14 @@ class StoryEngine:
         }
         trace["ACTION_TOOLS"] = action_tool_calls
         trace["WORLD_TOOLS"] = turn_ctx["all_world_tool_calls"]
-        trace["MOVEMENT_BLOCKED"] = any(
-            call.get("name") == "move_to_location"
-            and call.get("phase") == "phase_two"
-            and not _tool_call_succeeded(call)
-            for call in turn_ctx["all_world_tool_calls"]
+        trace["MOVEMENT_BLOCKED"] = (
+            any(
+                call.get("name") == "move_to_location"
+                and call.get("phase") == "phase_two"
+                and not _tool_call_succeeded(call)
+                for call in turn_ctx["all_world_tool_calls"]
+            )
+            and self.game_state.player_location == world_before.get("player_location", "")
         )
         trace["SUCCESSFUL_TOOL_COUNTS"] = dict(successful_tool_calls)
         trace["RECONCILIATION"] = reconciliation
