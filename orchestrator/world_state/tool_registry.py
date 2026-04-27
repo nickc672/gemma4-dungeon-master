@@ -17,9 +17,11 @@ from .scene_tools import (
 from .story import GameState
 from .turn_tools import (
     FINALIZE_TURN_TOOL_DEFINITION,
+    FINALIZE_WRITES_TOOL_DEFINITION,
     TURN_TODO_TOOL_DEFINITIONS,
     add_turn_note,
     finalize_turn,
+    finalize_writes,
     get_turn_progress,
     get_turn_todo,
     set_todo_item_status,
@@ -48,6 +50,7 @@ RUNTIME_TOOL_HANDLERS: Dict[str, RuntimeToolHandler] = {
     "get_turn_progress": get_turn_progress,
     "add_turn_note": add_turn_note,
     "finalize_turn": finalize_turn,
+    "finalize_writes": finalize_writes,
     "check_can_interact": check_can_interact,
     "get_current_context": get_current_context,
     "move_to_location": move_to_location,
@@ -110,6 +113,41 @@ TOOL_DEFINITIONS = [
     *TOOL_DEFINITION_GROUPS["entity"],
     *TOOL_DEFINITION_GROUPS["mechanics"],
     *TOOL_DEFINITION_GROUPS["world"],
+]
+
+PHASE_1_TOOL_NAMES = (
+    "check_can_interact",
+    "get_current_context",
+    "list_scene_entities",
+    "get_entity_state",
+    "retrieve_memory_tool",
+    "skill_check",
+    "roll_dice",
+    "get_recent_skill_checks",
+    "get_world_story",
+    "list_world_locations",
+    "get_world_location",
+    "get_world_scene",
+    "list_world_entities",
+    "get_world_entity",
+    "list_world_items",
+    "get_world_item",
+)
+
+PHASE_2_TOOL_NAMES = (
+    "move_to_location",
+    "move_npc",
+    "write_memory_tool",
+)
+
+PHASE_1_TOOL_DEFINITIONS = [
+    tool for tool in TOOL_DEFINITIONS
+    if tool.get("function", {}).get("name") in PHASE_1_TOOL_NAMES
+]
+
+PHASE_2_TOOL_DEFINITIONS = [
+    tool for tool in TOOL_DEFINITIONS
+    if tool.get("function", {}).get("name") in PHASE_2_TOOL_NAMES
 ]
 
 
@@ -294,6 +332,10 @@ def execute_tool(tool_name: str, arguments: dict[str, Any], game_state: GameStat
 
 
 __all__ = [
+    "PHASE_1_TOOL_DEFINITIONS",
+    "PHASE_1_TOOL_NAMES",
+    "PHASE_2_TOOL_DEFINITIONS",
+    "PHASE_2_TOOL_NAMES",
     "RUNTIME_TOOL_HANDLERS",
     "RUNTIME_TOOL_NAMES",
     "TOOL_DEFINITION_GROUPS",

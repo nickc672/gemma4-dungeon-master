@@ -42,6 +42,12 @@ class AgentHooks:
     # Return a string reason to push the model to continue instead.
     stop_hook: Optional[Callable[[str, bool], Optional[str]]] = None
 
+    # Called after all tool calls in an iteration have been executed.
+    # Return True to terminate the loop immediately with "completed" status.
+    # This is the primary mechanism for stopping the loop after a terminal
+    # tool (such as finalize_turn or finalize_writes) has succeeded.
+    early_exit: Optional[Callable[[], bool]] = None
+
 
 @dataclass
 class AgentResult:
@@ -326,6 +332,15 @@ class AgentLoop:
                     if note:
                         round_info["hook_notes"].append(str(note))
                         convo.append({"role": "user", "content": f"Hook note: {note}"})
+
+            if hooks.early_exit and hooks.early_exit():
+                return AgentResult(
+                    status="completed",
+                    final_answer=assistant_text,
+                    rounds=rounds,
+                    messages=convo,
+                    tool_calls=tool_trace,
+                )
 
         return AgentResult(
             status="max_iterations",

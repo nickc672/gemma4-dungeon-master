@@ -48,7 +48,7 @@ class LLMStep:
 
         for attempt_num in range(1, self.max_attempts + 1):
             if adapter.verbose:
-                print(f"[LLM] Step '{self.name}' — attempt {attempt_num}")
+                print(f"[LLM] Step '{self.name}' - attempt {attempt_num}")
 
             try:
                 raw, adapter_attempts = adapter.request_text(self.name, self.system_prompt, payload_text)
@@ -137,6 +137,11 @@ class LLMStep:
 # =========================
 
 def parse_sections(text: str, tags: set[str]) -> Dict[str, str]:
+    """
+    Split text into labelled sections. Lines without a recognized tag are
+    accumulated under the most recently seen tag. Lines that appear before
+    any tag is seen are dropped - the model must use the labels.
+    """
     result: Dict[str, List[str]] = {}
     current: str | None = None
 
@@ -145,7 +150,7 @@ def parse_sections(text: str, tags: set[str]) -> Dict[str, str]:
         lower = stripped.lower()
 
         matched = None
-        for tag in tags:  # ← no need to sort
+        for tag in tags:
             prefix = f"{tag}:"
             if lower.startswith(prefix):
                 matched = tag
@@ -181,8 +186,8 @@ def parse_narrative(sections: Dict[str, str]) -> str:
 
 def validate_narration_step(sections: Dict[str, str]) -> None:
     """
-    FIX: Provide more detailed error message when narrative section is missing
-    to help the LLM understand what went wrong.
+    Require an explicit `Narrative:` section. The model must use the label
+    or the step retries with feedback.
     """
     narrative = sections.get("narrative", "")
 
@@ -235,5 +240,6 @@ def validate_narration_step(sections: Dict[str, str]) -> None:
 __all__ = [
     "LLMStep",
     "parse_narrative",
+    "parse_sections",
     "validate_narration_step",
 ]

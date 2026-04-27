@@ -151,6 +151,7 @@ class LLMAdapter:
         post_tool_use: Optional[Callable[[str, Dict[str, Any], Dict[str, Any]], Optional[str]]] = None,
         assistant_response_hook: Optional[Callable[[str, Sequence[Dict[str, Any]], int], Optional[str]]] = None,
         stop_hook: Optional[Callable[[str, bool], Optional[str]]] = None,
+        early_exit: Optional[Callable[[], bool]] = None,
     ) -> Dict[str, Any]:
         """
         Backward-compatible wrapper around AgentLoop.run().
@@ -161,6 +162,7 @@ class LLMAdapter:
             post_tool_use=post_tool_use,
             response_hook=assistant_response_hook,
             stop_hook=stop_hook,
+            early_exit=early_exit,
         )
 
         result: AgentResult = self._loop.run(
