@@ -20,9 +20,12 @@ from orchestrator.app_config import (
     get_roll_mode,
 )
 from orchestrator.runtime_flow.pipeline import StoryEngine
-from orchestrator.runtime_flow.session_state import write_session_checkpoint
-from orchestrator.world_state.entity import DynamicSentenceMemory
+from orchestrator.runtime_flow.session_state import BeatTracker, write_session_checkpoint
+from orchestrator.world_state.entity import DynamicSentenceMemory, Entity
 from orchestrator.world_state.entity_tools import retrieve_memory_tool
+from orchestrator.world_state.item import Item
+from orchestrator.world_state.location import Location
+from orchestrator.world_state.story_library import StorySource, list_story_sources
 from orchestrator.world_state.tool_runtime import set_world_checkpoint_root
 from orchestrator.world_state.world_model import WorldModel, build_world_model
 
@@ -35,6 +38,9 @@ class SessionConfig:
     provider: str
     model: str
     api_key: str
+    story_key: str
+    story_label: str
+    world_model_data_dir: str
     starting_location: str
     starting_state: str
     roll_mode: str
@@ -44,6 +50,8 @@ class SessionConfig:
             [
                 self.provider.strip().lower(),
                 self.api_key.strip(),
+                self.story_key.strip().lower(),
+                self.world_model_data_dir.strip(),
                 self.starting_location.strip(),
                 self.starting_state.strip(),
                 self.roll_mode.strip().lower(),
@@ -57,8 +65,8 @@ class DisplayOptions:
 
 
 @st.cache_resource
-def load_world_defaults() -> WorldModel:
-    return build_world_model()
+def load_world_defaults(data_dir: str) -> WorldModel:
+    return build_world_model(data_dir=data_dir)
 
 
 @st.cache_data(ttl=30, show_spinner=False)
@@ -113,6 +121,7 @@ def ensure_runtime_state() -> None:
         "ui_notice": "",
         "session_dir": "",
         "snapshot_files": [],
+        "active_story_key": "",
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
@@ -194,6 +203,7 @@ def initialize_session(config: SessionConfig) -> None:
         provider=config.provider,
         model=config.model,
         api_key=config.api_key or None,
+        world_model_data_dir=config.world_model_data_dir,
         starting_location=config.starting_location,
         starting_state=config.starting_state,
         roll_mode=config.roll_mode,
@@ -215,6 +225,7 @@ def initialize_session(config: SessionConfig) -> None:
     st.session_state.turn_records = []
     st.session_state.config_signature = config.reset_signature()
     st.session_state.active_model = config.model
+    st.session_state.active_story_key = config.story_key
     st.session_state.session_dir = str(session_dir)
     st.session_state.snapshot_files = []
 
@@ -251,9 +262,31 @@ def get_story_engine() -> StoryEngine:
     return st.session_state.orchestrator
 
 
-def build_sidebar(world_defaults: WorldModel) -> tuple[SessionConfig, DisplayOptions, bool]:
+def build_sidebar(story_sources: list[StorySource]) -> tuple[SessionConfig, DisplayOptions, bool]:
     with st.sidebar:
         st.title("Session")
+
+        if not story_sources:
+            st.error("No stories are available. Add story folders under `orchestrator/world_state/data/stories`.")
+            st.stop()
+
+        source_by_key = {source.key: source for source in story_sources}
+        selected_story_key = str(st.session_state.get("story_source_input", story_sources[0].key) or "")
+        story_keys = [source.key for source in story_sources]
+        if selected_story_key not in story_keys:
+            selected_story_key = story_sources[0].key
+        selected_story_key = st.selectbox(
+            "Story",
+            options=story_keys,
+            index=story_keys.index(selected_story_key),
+            key="story_source_input",
+            format_func=lambda key: source_by_key[key].label,
+        )
+        story_source = source_by_key[selected_story_key]
+        world_defaults = load_world_defaults(str(story_source.data_dir))
+        if story_source.description:
+            st.caption(story_source.description)
+        st.caption(f"Story files: `{story_source.data_dir}`")
 
         provider_choices = get_provider_names()
         default_provider = get_default_provider()
@@ -308,24 +341,18 @@ def build_sidebar(world_defaults: WorldModel) -> tuple[SessionConfig, DisplayOpt
         with st.expander("Story Setup", expanded=False):
             starting_location = st.text_input(
                 "Starting location",
-                value=st.session_state.get(
-                    "starting_location_input",
-                    world_defaults.starting_location,
-                ),
-                key="starting_location_input",
+                value=world_defaults.starting_location,
+                key=f"starting_location_input_{story_source.key}",
             )
             starting_state = st.text_area(
                 "Starting state",
-                value=st.session_state.get(
-                    "starting_state_input",
-                    world_defaults.starting_state,
-                ),
+                value=world_defaults.starting_state,
                 height=180,
-                key="starting_state_input",
+                key=f"starting_state_input_{story_source.key}",
             )
 
         reset_requested = st.button("Reset Session With Current Setup", use_container_width=True)
-        st.caption("Model changes apply on the next request. Story setup changes apply only after reset.")
+        st.caption("Model changes apply on the next request. Story selection and setup changes apply only after reset.")
         session_dir = str(st.session_state.get("session_dir") or "").strip()
         if session_dir:
             st.caption(f"Session files: `{session_dir}`")
@@ -337,6 +364,9 @@ def build_sidebar(world_defaults: WorldModel) -> tuple[SessionConfig, DisplayOpt
         provider=str(provider or default_provider).strip().lower(),
         model=str(model or "").strip(),
         api_key=api_key,
+        story_key=story_source.key,
+        story_label=story_source.label,
+        world_model_data_dir=str(story_source.data_dir),
         starting_location=str(starting_location or "").strip(),
         starting_state=str(starting_state or "").strip(),
         roll_mode=str(roll_mode or "auto").strip().lower(),
@@ -470,6 +500,21 @@ def parse_json_mapping(text: str) -> dict[str, Any]:
     return {str(key): value for key, value in payload.items()}
 
 
+def parse_json_sequence(text: str, label: str) -> list[dict[str, Any]]:
+    raw = str(text or "").strip()
+    if not raw:
+        return []
+    payload = json.loads(raw)
+    if not isinstance(payload, list):
+        raise ValueError(f"{label} must be a JSON array.")
+    records: list[dict[str, Any]] = []
+    for index, entry in enumerate(payload, start=1):
+        if not isinstance(entry, dict):
+            raise ValueError(f"{label} entry {index} must be a JSON object.")
+        records.append(entry)
+    return records
+
+
 def parse_int_mapping(text: str) -> dict[str, int]:
     payload = parse_json_mapping(text)
     result: dict[str, int] = {}
@@ -512,6 +557,67 @@ def sorted_entity_keys(engine: StoryEngine) -> list[str]:
 
 def sorted_item_keys(engine: StoryEngine) -> list[str]:
     return [item.key for item in sorted(engine.world.items.values(), key=lambda value: value.key.lower())]
+
+
+def world_model_records(engine: StoryEngine) -> dict[str, Any]:
+    return {
+        "story": engine.world.story_record(),
+        "locations": engine.world.list_location_records(),
+        "entities": engine.world.list_entity_records(),
+        "items": engine.world.list_item_records(),
+    }
+
+
+def build_world_model_from_records(records: dict[str, Any]) -> WorldModel:
+    story = dict(records.get("story") or {})
+    model = WorldModel(
+        starting_location=str(story.get("starting_location") or "").strip(),
+        starting_state=str(story.get("starting_state") or "").strip(),
+        beat_list=[str(beat).strip() for beat in story.get("beat_list") or [] if str(beat).strip()],
+    )
+    for payload in records.get("locations") or []:
+        model.add_location(Location.from_record(dict(payload)))
+    for payload in records.get("entities") or []:
+        model.add_entity(Entity.from_record(dict(payload)))
+    for payload in records.get("items") or []:
+        model.add_item(Item.from_record(dict(payload)))
+    model.sync_actor_inventories()
+    return model
+
+
+def apply_world_model_to_engine(
+    engine: StoryEngine,
+    model: WorldModel,
+    *,
+    sync_runtime_story_status: bool = False,
+    move_player_to_start: bool = False,
+) -> None:
+    engine.world = model
+    setattr(engine.game_state, "_runtime_world_model", model)
+    old_index = int(getattr(engine.beats, "index", 0) or 0)
+    max_index = max(0, len(model.beat_list) - 1)
+    engine.beats = BeatTracker(list(model.beat_list), index=min(old_index, max_index))
+    engine.beat_list = list(engine.beats.beats)
+    if sync_runtime_story_status:
+        engine.story_status = model.starting_state
+
+    current_location = str(engine.game_state.player_location or "").strip()
+    target_location = current_location
+    if move_player_to_start and model.starting_location:
+        target_location = model.starting_location
+    elif current_location and model.get_location(current_location) is None:
+        target_location = model.starting_location
+    elif not current_location:
+        target_location = model.starting_location
+
+    if target_location and model.get_location(target_location) is not None:
+        sync_player_location(engine, target_location)
+
+    engine.game_state.discovered_keys.intersection_update(set(model.all_keys()))
+    if engine.game_state.player_location:
+        engine.game_state.discovered_keys.add(engine.game_state.player_location)
+    sync_npc_locations(engine)
+    engine.world.sync_actor_inventories()
 
 
 def collect_memory_rows(engine: StoryEngine, entity_key: str = "") -> list[dict[str, Any]]:
@@ -958,6 +1064,234 @@ def render_debug_trace(display: DisplayOptions) -> None:
             st.write("No debug trace is available yet.")
 
 
+def render_story_authoring(engine: StoryEngine) -> None:
+    st.subheader("Story")
+    st.caption("Edit the authored story record that seeds a session: starting location, premise, and beat guide.")
+
+    location_keys = sorted_location_keys(engine)
+    current_start = engine.world.starting_location
+    if current_start not in location_keys and current_start:
+        location_keys = [current_start, *location_keys]
+
+    form_col, preview_col = st.columns([1.4, 1], gap="large")
+    with form_col:
+        with st.form("story_authoring_form"):
+            if location_keys:
+                starting_location = st.selectbox(
+                    "Starting location",
+                    options=location_keys,
+                    index=location_keys.index(current_start) if current_start in location_keys else 0,
+                    key="story_authoring_starting_location",
+                )
+            else:
+                starting_location = st.text_input(
+                    "Starting location",
+                    value=current_start,
+                    key="story_authoring_starting_location_text",
+                )
+            starting_state = st.text_area(
+                "Starting state",
+                value=engine.world.starting_state,
+                height=220,
+            )
+            beat_list_text = st.text_area(
+                "Beat list",
+                value=format_lines(engine.world.beat_list),
+                height=240,
+                help="One beat per line.",
+            )
+            current_index = engine.beats.index if engine.beats.beats else 0
+            sync_status = st.checkbox(
+                "Also replace current runtime story status",
+                value=False,
+                key="story_authoring_sync_status",
+                help="Use this when the new premise should replace the live session status immediately.",
+            )
+            move_player_to_start = st.checkbox(
+                "Move player to starting location",
+                value=False,
+                key="story_authoring_move_player_to_start",
+                help="Use this when the authored starting location should become the current live location.",
+            )
+            submitted = st.form_submit_button("Apply Story Changes", use_container_width=True)
+
+        if submitted:
+            beats = parse_text_lines(beat_list_text)
+            engine.world.set_story(
+                starting_location=starting_location,
+                starting_state=starting_state,
+                beat_list=beats,
+            )
+            errors = engine.world.validate()
+            if errors:
+                st.error("\n".join(errors))
+                return
+            engine.beats = BeatTracker(beats, index=min(current_index, max(0, len(beats) - 1)))
+            engine.beat_list = list(engine.beats.beats)
+            if sync_status:
+                engine.story_status = engine.world.starting_state
+            if move_player_to_start:
+                sync_player_location(engine, engine.world.starting_location)
+            set_notice("Story record updated.")
+            st.rerun()
+
+    with preview_col:
+        st.markdown("**Current Record**")
+        st.json(engine.world.story_record(), expanded=False)
+        st.markdown("**Runtime Beat State**")
+        st.json(
+            {
+                "current_index": engine.beats.index,
+                "current": engine.beats.current(),
+                "next": engine.beats.next(),
+                "total": len(engine.beats.beats),
+            },
+            expanded=False,
+        )
+
+
+def render_data_characteristics(engine: StoryEngine) -> None:
+    st.subheader("Data Map")
+    st.caption("Authored content is stored in the world model; runtime fields are mutable session state.")
+
+    story_record = engine.world.story_record()
+    rows = [
+        {
+            "domain": "story",
+            "records": 1,
+            "fields": "starting_location, starting_state, beat_list",
+            "authorable_now": "yes",
+            "should_add": "title, synopsis, genre/tone, act/quest ids, success/failure resolution notes",
+        },
+        {
+            "domain": "locations",
+            "records": len(engine.world.locations),
+            "fields": "key, name, description, connections, tags",
+            "authorable_now": "yes",
+            "should_add": "read-aloud text, secrets, DCs, ambient details, locked/hidden exits",
+        },
+        {
+            "domain": "entities",
+            "records": len(engine.world.entities),
+            "fields": "key, name, entity_type, description, location, skills, stats, tags, memory",
+            "authorable_now": "yes",
+            "should_add": "goals, secrets, attitude, dialogue hooks, schedule, faction, relationship edges",
+        },
+        {
+            "domain": "items",
+            "records": len(engine.world.items),
+            "fields": "key, name, description, holder_kind, holder_key, portable, tags",
+            "authorable_now": "yes",
+            "should_add": "mechanical effects, clue payloads, rarity/value, discovery requirements",
+        },
+        {
+            "domain": "runtime",
+            "records": len(engine.game_state.discovered_keys),
+            "fields": "player_location, discovered_keys, quest_flags, story_status, summary, current beat",
+            "authorable_now": "yes, live session only",
+            "should_add": "named milestones, journal entries, authored flag definitions",
+        },
+        {
+            "domain": "memory",
+            "records": sum(entity.memory_count for entity in engine.world.entities.values()),
+            "fields": "per-entity sentence memory",
+            "authorable_now": "yes",
+            "should_add": "source/type, confidence, visibility, chronology, expiration/pinning",
+        },
+    ]
+    st.dataframe(rows, use_container_width=True)
+
+    st.markdown("**Current Story Shape**")
+    st.json(
+        {
+            "starting_location_exists": bool(engine.world.get_location(story_record.get("starting_location", ""))),
+            "beat_count": len(story_record.get("beat_list") or []),
+            "location_count": len(engine.world.locations),
+            "entity_count": len(engine.world.entities),
+            "item_count": len(engine.world.items),
+            "validation_errors": engine.world.validate(),
+        },
+        expanded=False,
+    )
+
+
+def render_bulk_world_model_editor(engine: StoryEngine) -> None:
+    st.subheader("Bulk Rewrite")
+    st.caption("Replace the complete authored world model in memory. The replacement is validated before it is applied.")
+
+    current_records = world_model_records(engine)
+    with st.form("bulk_world_model_editor_form"):
+        story_text = st.text_area("story.json", value=format_json(current_records["story"]), height=220)
+        locations_text = st.text_area("locations.json", value=format_json(current_records["locations"]), height=260)
+        entities_text = st.text_area("actors.json", value=format_json(current_records["entities"]), height=260)
+        items_text = st.text_area("items.json", value=format_json(current_records["items"]), height=260)
+        sync_status = st.checkbox(
+            "Also replace current runtime story status",
+            value=False,
+            key="bulk_world_model_sync_status",
+        )
+        move_player_to_start = st.checkbox(
+            "Move player to starting location",
+            value=False,
+            key="bulk_world_model_move_player_to_start",
+        )
+        submitted = st.form_submit_button("Validate And Replace World Model", use_container_width=True)
+
+    if submitted:
+        try:
+            replacement_records = {
+                "story": parse_json_mapping(story_text),
+                "locations": parse_json_sequence(locations_text, "locations.json"),
+                "entities": parse_json_sequence(entities_text, "actors.json"),
+                "items": parse_json_sequence(items_text, "items.json"),
+            }
+            replacement = build_world_model_from_records(replacement_records)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            st.error(f"Invalid world model JSON: {exc}")
+            return
+
+        errors = replacement.validate()
+        if errors:
+            st.error("\n".join(errors))
+            return
+
+        apply_world_model_to_engine(
+            engine,
+            replacement,
+            sync_runtime_story_status=sync_status,
+            move_player_to_start=move_player_to_start,
+        )
+        set_notice("World model replaced.")
+        st.rerun()
+
+    source_dir = Path(str(getattr(engine.game_state, "_world_model_data_dir", "") or "")).expanduser()
+    st.divider()
+    save_col, checkpoint_col = st.columns(2)
+    with save_col:
+        if st.button("Save Current World Model To Source Files", use_container_width=True):
+            try:
+                engine.world.save(source_dir)
+            except Exception as exc:
+                st.error(f"Save failed: {exc}")
+            else:
+                set_notice(f"World model saved to {source_dir}.")
+                st.rerun()
+    with checkpoint_col:
+        if st.button("Write Session Checkpoint", use_container_width=True):
+            session_dir = str(st.session_state.get("session_dir") or "").strip()
+            if not session_dir:
+                st.error("No session directory is active.")
+            else:
+                try:
+                    snapshot_path = write_session_checkpoint(session_dir, engine, int(engine.turn_index))
+                    st.session_state.snapshot_files = [*st.session_state.get("snapshot_files", []), str(snapshot_path)]
+                except Exception as exc:
+                    st.error(f"Checkpoint write failed: {exc}")
+                else:
+                    set_notice(f"Checkpoint written to {snapshot_path}.")
+                    st.rerun()
+
+
 def render_runtime_editor(engine: StoryEngine) -> None:
     st.subheader("Runtime State")
     st.caption("These changes affect the live session only.")
@@ -1354,10 +1688,12 @@ def render_snapshot_browser(engine: StoryEngine, display: DisplayOptions) -> Non
 
 def render_world_state_editor(engine: StoryEngine, display: DisplayOptions) -> None:
     st.caption("Inspect and edit the current in-memory world state for this session.")
-    runtime_tab, location_tab, entity_tab, item_tab, memory_tab, snapshot_tab = st.tabs(
-        ["Runtime", "Locations", "Entities", "Items", "Memory", "Browse"]
+    story_tab, runtime_tab, location_tab, entity_tab, item_tab, memory_tab, data_tab, bulk_tab, snapshot_tab = st.tabs(
+        ["Story", "Runtime", "Locations", "Entities", "Items", "Memory", "Data Map", "Bulk JSON", "Browse"]
     )
 
+    with story_tab:
+        render_story_authoring(engine)
     with runtime_tab:
         render_runtime_editor(engine)
     with location_tab:
@@ -1368,6 +1704,10 @@ def render_world_state_editor(engine: StoryEngine, display: DisplayOptions) -> N
         render_item_editor(engine)
     with memory_tab:
         render_memory_browser(engine)
+    with data_tab:
+        render_data_characteristics(engine)
+    with bulk_tab:
+        render_bulk_world_model_editor(engine)
     with snapshot_tab:
         render_snapshot_browser(engine, display)
 
@@ -1376,8 +1716,8 @@ def main() -> None:
     st.set_page_config(page_title="Dungeon Master's Companion", layout="wide")
     ensure_runtime_state()
 
-    world_defaults = load_world_defaults()
-    session_config, display, reset_requested = build_sidebar(world_defaults)
+    story_sources = list_story_sources()
+    session_config, display, reset_requested = build_sidebar(story_sources)
     ensure_session(session_config, reset_requested=reset_requested)
 
     engine = get_story_engine()
