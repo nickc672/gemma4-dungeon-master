@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from ..world_state.story import recompute_discovered_locations
+
 
 def _compact_text(text: str, limit: int = 280) -> str:
     cleaned = " ".join(str(text or "").split()).strip()
@@ -35,7 +37,8 @@ def build_runtime_state_snapshot(engine: Any) -> dict[str, Any]:
 
     return {
         "player_location": game_state.player_location,
-        "discovered_keys": sorted(str(value) for value in game_state.discovered_keys),
+        "visited_locations": sorted(str(value) for value in game_state.visited_locations),
+        "discovered_locations": sorted(str(value) for value in game_state.discovered_locations),
         "quest_flags": dict(sorted(game_state.quest_flags.items())),
         "npc_locations": dict(sorted(game_state.npc_locations.items())),
         "story_status": engine.story_status,
@@ -100,8 +103,10 @@ def diff_runtime_state(before: dict[str, Any], after: dict[str, Any]) -> dict[st
                 }
             )
 
-    before_discovered = set(before.get("discovered_keys") or [])
-    after_discovered = set(after.get("discovered_keys") or [])
+    before_visited = set(before.get("visited_locations") or [])
+    after_visited = set(after.get("visited_locations") or [])
+    before_discovered = set(before.get("discovered_locations") or [])
+    after_discovered = set(after.get("discovered_locations") or [])
     before_flags = dict(before.get("quest_flags") or {})
     after_flags = dict(after.get("quest_flags") or {})
     before_npcs = dict(before.get("npc_locations") or {})
@@ -139,9 +144,13 @@ def diff_runtime_state(before: dict[str, Any], after: dict[str, Any]) -> dict[st
             "before": list(before.get("session_summary") or []),
             "after": list(after.get("session_summary") or []),
         },
-        "discovered_keys": {
+        "discovered_locations": {
             "added": sorted(after_discovered - before_discovered),
             "removed": sorted(before_discovered - after_discovered),
+        },
+        "visited_locations": {
+            "added": sorted(after_visited - before_visited),
+            "removed": sorted(before_visited - after_visited),
         },
         "quest_flag_changes": quest_flag_changes,
         "npc_location_changes": npc_location_changes,
@@ -213,12 +222,15 @@ def reconcile_turn(
 
     current_location = str(engine.game_state.player_location or "").strip()
     if current_location:
-        engine.game_state.discovered_keys.add(current_location)
-        for connection in engine.world.scene_snapshot(current_location).get("connections", []):
-            connection_key = str(connection or "").strip()
-            if connection_key:
-                engine.game_state.discovered_keys.add(connection_key)
-        engine.discovered_keys = engine.game_state.discovered_keys
+        # The player is here, so this location must be in visited.
+        # discovered_locations is then derived from all visited neighbors.
+        if current_location not in engine.game_state.visited_locations:
+            engine.game_state.visited_locations.add(current_location)
+        recompute_discovered_locations(engine.game_state, engine.world)
+        # Mirror onto the engine for code paths that read engine.visited_locations
+        # / engine.discovered_locations directly.
+        engine.visited_locations = engine.game_state.visited_locations
+        engine.discovered_locations = engine.game_state.discovered_locations
 
     engine.game_state.npc_locations = {
         entity.key: entity.location

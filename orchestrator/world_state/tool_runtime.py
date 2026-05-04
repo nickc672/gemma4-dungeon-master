@@ -9,7 +9,7 @@ from .entity import (
     DynamicSentenceMemory,
     Entity,
 )
-from .story import GameState
+from .story import GameState, mark_location_visited, recompute_discovered_locations
 from .world_model import WorldModel, build_world_model
 
 
@@ -33,6 +33,49 @@ SKILL_TO_STAT: Dict[str, str] = {
     "stealth": "dexterity",
     "survival": "wisdom",
 }
+
+
+def find_route_via_visited(
+    model: WorldModel,
+    start_key: str,
+    destination_key: str,
+    visited_locations: set[str],
+) -> Optional[List[str]]:
+    """
+    BFS for the shortest path from start to destination where every
+    intermediate node is in visited_locations. 
+    """
+    start = str(start_key or "").strip()
+    destination = str(destination_key or "").strip()
+    if not start or not destination:
+        return None
+    if start == destination:
+        return [start]
+
+    start_location = model.get_location(start)
+    if start_location is None:
+        return None
+
+    if destination in start_location.connections:
+        return [start, destination]
+
+    queue: List[tuple[str, List[str]]] = [(start, [start])]
+    seen: set[str] = {start}
+    while queue:
+        node_key, path = queue.pop(0)
+        node = model.get_location(node_key)
+        if node is None:
+            continue
+        for neighbor in node.connections:
+            neighbor_key = str(neighbor or "").strip()
+            if not neighbor_key or neighbor_key in seen:
+                continue
+            if neighbor_key == destination:
+                return path + [neighbor_key]
+            if neighbor_key in visited_locations:
+                seen.add(neighbor_key)
+                queue.append((neighbor_key, path + [neighbor_key]))
+    return None
 
 TODO_ACTIVE_STATUSES = {"pending", "in_progress"}
 TODO_FINAL_STATUSES = {"done", "skipped", "blocked"}
@@ -131,7 +174,9 @@ def _sync_game_state_from_world_model(game_state: GameState, model: WorldModel) 
     player = model.get_entity("Player")
     if player is not None and player.location:
         game_state.player_location = player.location
-        game_state.discovered_keys.add(player.location)
+        if player.location not in game_state.visited_locations:
+            game_state.visited_locations.add(player.location)
+            recompute_discovered_locations(game_state, model)
 
     npc_locations: dict[str, str] = {}
     for entity in model.entities.values():
@@ -231,8 +276,11 @@ __all__ = [
     "ensure_entity_registry",
     "entity_public_view",
     "find_entity",
+    "find_route_via_visited",
     "get_runtime_world_model",
+    "mark_location_visited",
     "normalize_key",
+    "recompute_discovered_locations",
     "require_turn_orchestration_ctx",
     "get_world_checkpoint_root",
     "save_runtime_world_checkpoint",

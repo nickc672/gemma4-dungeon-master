@@ -106,6 +106,26 @@ def _mentions_unresolved_roll_request(text: str) -> bool:
     return any(marker in cleaned for marker in markers)
 
 
+def _turn_has_resolved_roll(turn_ctx: Dict[str, Any]) -> bool:
+    """
+    True when at least one roll has already fired during this turn, either
+    through a direct skill_check call or through a tool that rolled
+    Used to suppress the 'defer roll to narration' guard once a roll exists,
+    so the model can legitimately reference the prior result in its Decision Summary
+    without being blocked for using words like 'roll', 'DC', or 'check'.
+    """
+    for call in turn_ctx.get("all_world_tool_calls", []) or []:
+        name = str(call.get("name") or "").strip()
+        result = call.get("result") or {}
+        if name == "skill_check" and (result.get("ok") or result.get("success")):
+            return True
+        if name == "check_can_interact":
+            history = result.get("history_check") or {}
+            if history.get("rolled"):
+                return True
+    return False
+
+
 # Keywords that signal player movement intent.
 _MOVEMENT_PHRASES = frozenset([
     "go to", "move to", "walk to", "run to", "travel to", "head to",
@@ -204,8 +224,13 @@ class StoryEngine:
         if player_entity is not None:
             player_entity.set_location(resolved_starting_location)
         self.game_state.player_location = resolved_starting_location
-        self.game_state.discovered_keys = {resolved_starting_location}
-        self.discovered_keys = self.game_state.discovered_keys
+        self.game_state.visited_locations = {resolved_starting_location}
+        # discovered_locations is derived (neighbors of visited minus visited),
+        # so recompute right after the visited set changes.
+        from ..world_state.story import recompute_discovered_locations
+        recompute_discovered_locations(self.game_state, self.world)
+        self.visited_locations = self.game_state.visited_locations
+        self.discovered_locations = self.game_state.discovered_locations
         get_runtime_world_model(self.game_state)
         self.roll_mode = (roll_mode or get_roll_mode()).strip().lower()
         if self.roll_mode not in {"auto", "manual"}:
@@ -269,7 +294,8 @@ class StoryEngine:
                 "node_type": "location",
                 "connections": ", ".join(location.connections) if location.connections else "none",
                 "location": location.key,
-                "discovered": "yes" if location.key in self.game_state.discovered_keys else "no",
+                "visited": "yes" if location.key in self.game_state.visited_locations else "no",
+                "discovered": "yes" if location.key in self.game_state.discovered_locations else "no",
             })
 
         for key in connected_locations:
@@ -280,7 +306,8 @@ class StoryEngine:
                 "node_type": "location",
                 "connections": ", ".join(adjacent.connections) if adjacent.connections else "none",
                 "location": adjacent.key,
-                "discovered": "yes" if adjacent.key in self.game_state.discovered_keys else "no",
+                "visited": "yes" if adjacent.key in self.game_state.visited_locations else "no",
+                "discovered": "yes" if adjacent.key in self.game_state.discovered_locations else "no",
             })
 
         player = self.world.get_entity("Player")
@@ -331,6 +358,8 @@ class StoryEngine:
             scene_actors=scene_actors,
             scene_items=scene_items,
             entity_info=entity_info,
+            visited_locations=sorted(self.game_state.visited_locations),
+            discovered_locations=sorted(self.game_state.discovered_locations),
         )
 
     # -----------------------
@@ -376,6 +405,10 @@ class StoryEngine:
             "current_location": self.game_state.player_location,
             "finalize": None,
             "finalize_writes": None,
+            "roll_mode": self.roll_mode,
+            "manual_roll_provider": (
+                self.manual_roll_provider if self.roll_mode == "manual" else None
+            ),
         }
         action_tool_calls: List[Dict[str, Any]] = []
         bind_turn_orchestration_ctx(self.game_state, turn_ctx)
@@ -392,9 +425,55 @@ class StoryEngine:
         ]
         phase_one_allowed_names = set(PHASE_1_TOOL_NAMES) | {"finalize_turn"}
 
+        _PHASE_ONE_CACHEABLE_TOOLS = frozenset({
+            "check_can_interact",
+            "get_current_context",
+            "list_scene_entities",
+            "get_entity_state",
+            "get_world_graph",
+            "get_world_connections",
+            "get_world_location_overview",
+            "get_world_location_detail",
+            "retrieve_memory_tool",
+            "get_recent_skill_checks",
+        })
+
+        def _cache_signature(tool_name: str, args: Dict[str, Any]) -> str:
+            # Strip internal-only kwargs that should not affect the cache key.
+            cleaned = {
+                key: value
+                for key, value in (args or {}).items()
+                if not str(key).startswith("_")
+            }
+            try:
+                payload = json.dumps(cleaned, sort_keys=True, default=str)
+            except Exception:
+                payload = repr(sorted((args or {}).items()))
+            return f"{tool_name}::{payload}"
+
         def phase_one_tool_executor(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             args = dict(arguments or {})
             turn_ctx["current_location"] = self.game_state.player_location
+
+            # Cache lookup: if the model is re-issuing a read
+            # because of a validation rejection in the previous iteration,
+            # serve the prior result instead of executing again. This is
+            # what prevents check_can_interact from prompting for a second
+            # History roll when the model just needed to add a Decision
+            # Summary header to its text.
+            cache: Dict[str, Dict[str, Any]] = turn_ctx.setdefault("phase_one_tool_cache", {})
+            cache_key = _cache_signature(tool_name, args)
+            if tool_name in _PHASE_ONE_CACHEABLE_TOOLS and cache_key in cache:
+                cached_result = dict(cache[cache_key])
+                cached_result["_cached"] = True
+                turn_ctx["all_world_tool_calls"].append({
+                    "phase": "phase_one",
+                    "name": tool_name,
+                    "arguments": args,
+                    "result": cached_result,
+                    "cached": True,
+                })
+                return cached_result
 
             # Manual roll passthrough (UI-supplied d20) for skill_check / single-die roll_dice.
             manual_roll_supported = (
@@ -425,6 +504,12 @@ class StoryEngine:
                 "arguments": args,
                 "result": result,
             })
+
+            # Store successful results from cacheable tools so duplicate
+            # calls later in the turn return the same payload without
+            # re-executing.
+            if success and tool_name in _PHASE_ONE_CACHEABLE_TOOLS:
+                cache[cache_key] = dict(result)
 
             if success:
                 successful_tool_calls[tool_name] = successful_tool_calls.get(tool_name, 0) + 1
@@ -501,6 +586,7 @@ class StoryEngine:
                 not tool_calls
                 and _mentions_unresolved_roll_request(text)
                 and turn_ctx.get("finalize") is None
+                and not _turn_has_resolved_roll(turn_ctx)
             ):
                 return "If a roll/check is needed, call `skill_check` now. Do not defer rolls to narration."
             return None
@@ -509,9 +595,14 @@ class StoryEngine:
             _ = assistant_text, already_fired
             if turn_ctx.get("finalize") is None:
                 return (
-                    "The phase is not finished. Call `finalize_turn` with a "
-                    "turn_summary and any intended_actions once you have decided "
-                    "what should happen this turn."
+                    "The phase is not finished. Call `finalize_turn` now "
+                    "with this exact shape: "
+                    '{"turn_summary": "<what happened this turn>", '
+                    '"narration_focus": "<what the narrator should describe>", '
+                    '"blocked_reason": ""}. '
+                    "If something blocked the action, put the reason in "
+                    "blocked_reason instead of leaving it empty. Do not "
+                    "call any other tools first."
                 )
             return None
 
@@ -671,8 +762,10 @@ class StoryEngine:
             _ = assistant_text
             if turn_ctx.get("finalize_writes") is None:
                 return (
-                    "The writer phase is not finished. Call `finalize_writes` once "
-                    "you have applied all needed state changes."
+                    "The writer phase is not finished. Call `finalize_writes` "
+                    "now with this shape: "
+                    '{"writes_summary": "<short summary of writes applied>"}. '
+                    "Do not call any other tools first."
                 )
             if already_fired:
                 return None

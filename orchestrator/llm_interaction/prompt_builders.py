@@ -22,6 +22,8 @@ class PromptState:
     scene_actors: List[str] = field(default_factory=list)
     scene_items: List[str] = field(default_factory=list)
     entity_info: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    visited_locations: List[str] = field(default_factory=list)
+    discovered_locations: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -160,7 +162,7 @@ def _entity_info_block(state: PromptState) -> str:
     for key in sorted(state.entity_info):
         info = state.entity_info[key]
         parts = [f"  {key}:"]
-        for label in ("node_type", "location", "connections", "inventory", "holder", "discovered", "flags"):
+        for label in ("node_type", "location", "connections", "inventory", "holder", "visited", "discovered", "flags"):
             value = str(info.get(label, "")).strip()
             if value:
                 parts.append(f"    {label}: {value}")
