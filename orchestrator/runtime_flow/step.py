@@ -141,20 +141,29 @@ def parse_sections(text: str, tags: set[str]) -> Dict[str, str]:
     Split text into labelled sections. Lines without a recognized tag are
     accumulated under the most recently seen tag. Lines that appear before
     any tag is seen are dropped - the model must use the labels.
+    Leading markdown decoration (* # > - " _ [ ] and whitespace) is stripped
     """
+
+    decoration = "*#>\"-_[] \t"
+    decoration_class = r'[\s*#>"_\[\]\-]'
+    label_patterns = [
+        (tag, re.compile(rf"^{re.escape(tag)}{decoration_class}*:\s*(.*)$", re.IGNORECASE))
+        for tag in tags
+    ]
+
     result: Dict[str, List[str]] = {}
     current: str | None = None
 
     for line in text.splitlines():
         stripped = line.strip()
-        lower = stripped.lower()
+        bare = stripped.lstrip(decoration)
 
         matched = None
-        for tag in tags:
-            prefix = f"{tag}:"
-            if lower.startswith(prefix):
+        for tag, pattern in label_patterns:
+            m = pattern.match(bare)
+            if m:
                 matched = tag
-                content = stripped[len(prefix):].strip()
+                content = m.group(1).lstrip(decoration)
                 result.setdefault(tag, []).append(content)
                 current = tag
                 break

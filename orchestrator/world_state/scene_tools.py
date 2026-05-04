@@ -283,7 +283,12 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
 
 def move_to_location(location_key: str = "", game_state: GameState | None = None) -> dict[str, object]:
     if game_state is None:
-        return {"success": False, "new_location": None, "reason": "Missing game_state context."}
+        return {
+            "success": False,
+            "new_location": None,
+            "reason": "Missing game_state context.",
+            "retryable": False,
+        }
     model = get_runtime_world_model(game_state)
     if not str(location_key or "").strip():
         return {
@@ -300,11 +305,17 @@ def move_to_location(location_key: str = "", game_state: GameState | None = None
             "success": False,
             "new_location": None,
             "reason": f"Location '{location_key}' does not exist.",
+            "retryable": False,
         }
 
     current_location = model.get_location(game_state.player_location)
     if current_location is None:
-        return {"success": False, "new_location": None, "reason": "Invalid current location."}
+        return {
+            "success": False,
+            "new_location": None,
+            "reason": "Invalid current location.",
+            "retryable": False,
+        }
     if location_key == game_state.player_location:
         return {
             "success": True,
@@ -328,6 +339,7 @@ def move_to_location(location_key: str = "", game_state: GameState | None = None
                 f"Cannot move to {location.key}. No route exists from "
                 f"{game_state.player_location} through visited locations."
             ),
+            "retryable": False,
         }
 
     # Auto-route: walk the path one hop at a time. Every step must be a
@@ -348,6 +360,7 @@ def move_to_location(location_key: str = "", game_state: GameState | None = None
                 ),
                 "path_attempted": list(route),
                 "path_traversed": traversed,
+                "retryable": False,
             }
         if not model.move_entity("Player", next_key):
             return {
@@ -356,6 +369,7 @@ def move_to_location(location_key: str = "", game_state: GameState | None = None
                 "reason": "Player entity is missing from the world model.",
                 "path_attempted": list(route),
                 "path_traversed": traversed,
+                "retryable": False,
             }
         game_state.player_location = next_key
         mark_location_visited(game_state, next_key, model)
@@ -402,7 +416,11 @@ def get_current_context(game_state: GameState) -> dict[str, object]:
 
 def move_npc(npc_key: str = "", new_location: str = "", game_state: GameState | None = None) -> dict[str, object]:
     if game_state is None:
-        return {"success": False, "reason": "Missing game_state context."}
+        return {
+            "success": False,
+            "reason": "Missing game_state context.",
+            "retryable": False,
+        }
     model = get_runtime_world_model(game_state)
     if not str(npc_key or "").strip() or not str(new_location or "").strip():
         return {"success": True, "reason": "Missing npc_key or new_location. No NPC movement applied."}
@@ -410,12 +428,24 @@ def move_npc(npc_key: str = "", new_location: str = "", game_state: GameState | 
     resolved_location = _resolve_target_key(model, new_location)
     npc = model.get_entity(resolved_npc or npc_key)
     if npc is None:
-        return {"success": False, "reason": f"NPC '{npc_key}' does not exist."}
+        return {yes 
+            "success": False,
+            "reason": f"NPC '{npc_key}' does not exist.",
+            "retryable": False,
+        }
     if npc.entity_type != "npc":
-        return {"success": False, "reason": f"'{npc_key}' is not an NPC."}
+        return {
+            "success": False,
+            "reason": f"'{npc_key}' is not an NPC.",
+            "retryable": False,
+        }
     location = model.get_location(resolved_location or new_location)
     if location is None:
-        return {"success": False, "reason": f"Location '{new_location}' does not exist."}
+        return {
+            "success": False,
+            "reason": f"Location '{new_location}' does not exist.",
+            "retryable": False,
+        }
 
     model.move_entity(npc.key, location.key)
     game_state.npc_locations[npc.key] = location.key

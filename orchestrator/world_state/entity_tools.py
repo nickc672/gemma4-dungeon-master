@@ -11,12 +11,20 @@ def get_entity_state(
     game_state: GameState | None = None,
 ) -> dict[str, object]:
     if game_state is None:
-        return {"success": False, "reason": "Missing game_state context."}
+        return {
+            "success": False,
+            "reason": "Missing game_state context.",
+            "retryable": False,
+        }
 
     resolved_entity = str(entity_key or "").strip() or "Player"
     entity = find_entity(resolved_entity, game_state)
     if entity is None:
-        return {"success": False, "reason": f"Entity '{entity_key}' not found."}
+        return {
+            "success": False,
+            "reason": f"Entity '{entity_key}' not found.",
+            "retryable": False,
+        }
 
     return {
         "success": True,
@@ -35,7 +43,12 @@ def retrieve_memory_tool(
     game_state: GameState | None = None,
 ) -> dict[str, object]:
     if game_state is None:
-        return {"success": False, "message": "Missing game_state context.", "memories": []}
+        return {
+            "success": False,
+            "message": "Missing game_state context.",
+            "memories": [],
+            "retryable": False,
+        }
 
     resolved_entity = str(entity_name or "").strip() or "Player"
     entity = find_entity(resolved_entity, game_state)
@@ -44,6 +57,7 @@ def retrieve_memory_tool(
             "success": False,
             "message": f"Entity '{resolved_entity}' is not registered.",
             "memories": [],
+            "retryable": False,
         }
 
     query = str(context or "").strip()
@@ -73,7 +87,11 @@ def write_memory_tool(
     game_state: GameState | None = None,
 ) -> dict[str, object]:
     if game_state is None:
-        return {"success": False, "message": "Missing game_state context."}
+        return {
+            "success": False,
+            "message": "Missing game_state context.",
+            "retryable": False,
+        }
 
     resolved_entity = str(entity_name or "").strip() or "Player"
     entity = find_entity(resolved_entity, game_state)
@@ -81,6 +99,7 @@ def write_memory_tool(
         return {
             "success": False,
             "message": f"Entity '{resolved_entity}' is not registered.",
+            "retryable": False,
         }
 
     text = str(memory or context or "").strip()

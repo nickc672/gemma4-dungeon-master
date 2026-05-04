@@ -529,6 +529,7 @@ class StoryEngine:
             if tool_name not in phase_one_allowed_names:
                 return {
                     "allow": False,
+                    "retryable": False,
                     "reason": (
                         f"Tool '{tool_name}' is not available in Phase 1. "
                         "Use only read tools, mechanics tools, and finalize_turn."
@@ -538,6 +539,7 @@ class StoryEngine:
             if tool_name == "finalize_turn" and turn_ctx.get("finalize") is not None:
                 return {
                     "allow": False,
+                    "retryable": False,
                     "reason": (
                         "finalize_turn was already called and succeeded. "
                         "STOP RESPONDING. Do not call finalize_turn again. "
@@ -700,6 +702,7 @@ class StoryEngine:
             if tool_name not in phase_two_allowed_names:
                 return {
                     "allow": False,
+                    "retryable": False,
                     "reason": (
                         f"Tool '{tool_name}' is not available in Phase 2. "
                         "Use only move_to_location, move_npc, write_memory_tool, "
@@ -710,6 +713,7 @@ class StoryEngine:
             if tool_name == "finalize_writes" and turn_ctx.get("finalize_writes") is not None:
                 return {
                     "allow": False,
+                    "retryable": False,
                     "reason": (
                         "finalize_writes was already called and succeeded. "
                         "STOP RESPONDING. Do not call finalize_writes again. "
