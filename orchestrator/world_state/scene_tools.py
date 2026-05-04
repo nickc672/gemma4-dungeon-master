@@ -428,7 +428,7 @@ def move_npc(npc_key: str = "", new_location: str = "", game_state: GameState | 
     resolved_location = _resolve_target_key(model, new_location)
     npc = model.get_entity(resolved_npc or npc_key)
     if npc is None:
-        return {yes 
+        return { 
             "success": False,
             "reason": f"NPC '{npc_key}' does not exist.",
             "retryable": False,
