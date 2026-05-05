@@ -519,8 +519,7 @@
     ],
     "memory": [
       "Mara keeps the storeroom code private and knows someone has tested the lock repeatedly.",
-      "She trusts the player more than most outsiders once they show respect for her staff.",
-      "Mayor Elric arrived at the Copper Cup tavern unexpectedly in the evening, accompanied by an unfamiliar person. The Mayor's presence caused the other patrons to become more guarded. Mara sensed trouble and offered the Mayor the good bottles from the higher shelf."
+      "She trusts the player more than most outsiders once they show respect for her staff."
     ]
   },
   {
@@ -528,7 +527,7 @@
     "name": "Mayor Elric",
     "entity_type": "npc",
     "description": "Mayor Elric is a tired man in a well-kept coat, juggling merchants' demands and the growing panic over unexplained bloodstains. No one has truly gone missing, but he fears the town is fraying and doesn't know how much longer he can pretend things are under control.",
-    "location": "Copper Cup",
+    "location": "Town Hall",
     "skills": {
       "persuasion": 3,
       "insight": 2,
@@ -549,8 +548,7 @@
     ],
     "memory": [
       "Elric is balancing public calm against private panic and has delayed announcing full incident numbers.",
-      "He asked Scribe Loth to archive certain reports until facts can be verified.",
-      "The visitor persuaded me to take a break from my reports and join them for a drink at the Copper Cup. I agreed\u2014I needed the respite and the company."
+      "He asked Scribe Loth to archive certain reports until facts can be verified."
     ]
   },
   {
@@ -651,7 +649,7 @@
     "name": "Player",
     "entity_type": "player",
     "description": "The player character investigating the harbor town mystery.",
-    "location": "Copper Cup",
+    "location": "Town Square",
     "skills": {
       "perception": 2,
       "investigation": 3,
@@ -669,13 +667,7 @@
       "player"
     ],
     "memory": [
-      "You came to town chasing rumors about bloodstains and missing memories.",
-      "Traveled to Town Hall and found it bustling with official concern. The Town Clerk, a thin woman with deep worry lines, was shuffling through ledgers at a heavy wooden desk. Townsfolk clustered near a notice board speaking urgently. The walls displayed records and a map of town with certain streets marked in red chalk, suggesting the town leadership is documenting and trying to make sense of recent chaos.",
-      "Turn 1: Player left Town Square and traveled to Town Hall. check_can_interact confirmed Town Hall is accessible from the current location.",
-      "Successfully persuaded Mayor Elric to leave Town Hall and accompany me to the Copper Cup tavern for a drink. He seemed relieved to take a break from his reports and mentioned the townsfolk have been tense.",
-      "Turn 2: Player invited Mayor Elric to join them for a drink at the Copper Cup. Persuasion check succeeded (rolled 20). Mayor Elric accepts the invitation and agrees to accompany the player.",
-      "Traveled with Mayor Elric from Town Hall through Town Square to the Copper Cup tavern on the waterfront. The tavern is warm and bustling with woodsmoke and ale-steam. Mara, the salt-grey haired barkeep, showed deference and relief upon seeing the Mayor, asking if there was trouble. Other patrons\u2014fishermen and an old woman\u2014noticed the Mayor's arrival and became more guarded in their conversations.",
-      "Turn 3: Player leaves Town Hall with Mayor Elric and travels to the Copper Cup. The route is Town Hall \u2192 Town Square \u2192 Copper Cup. check_can_interact confirmed both Town Square and Copper Cup are accessible from the current loca..."
+      "You came to town chasing rumors about bloodstains and missing memories."
     ]
   },
   {

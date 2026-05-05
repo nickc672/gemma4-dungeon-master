@@ -649,7 +649,7 @@
     "name": "Player",
     "entity_type": "player",
     "description": "The player character investigating the harbor town mystery.",
-    "location": "Town Hall",
+    "location": "Town Square",
     "skills": {
       "perception": 2,
       "investigation": 3,
@@ -667,9 +667,7 @@
       "player"
     ],
     "memory": [
-      "You came to town chasing rumors about bloodstains and missing memories.",
-      "Traveled to Town Hall and found it bustling with official concern. The Town Clerk, a thin woman with deep worry lines, was shuffling through ledgers at a heavy wooden desk. Townsfolk clustered near a notice board speaking urgently. The walls displayed records and a map of town with certain streets marked in red chalk, suggesting the town leadership is documenting and trying to make sense of recent chaos.",
-      "Turn 1: Player left Town Square and traveled to Town Hall. check_can_interact confirmed Town Hall is accessible from the current location."
+      "You came to town chasing rumors about bloodstains and missing memories."
     ]
   },
   {

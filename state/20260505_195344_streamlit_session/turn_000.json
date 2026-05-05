@@ -33,17 +33,10 @@
       "Bronze Fountain Coin"
     ]
   },
-  "session_summary": "Intro: You arrive in a dusk-lit harbor town gripped by rumors of bloodstains, missing time, and whispered blame toward a reclusive wizard\u2014and the fear is real enough to taste.",
-  "session_summary_events": [
-    "Intro: You arrive in a dusk-lit harbor town gripped by rumors of bloodstains, missing time, and whispered blame toward a reclusive wizard\u2014and the fear is real enough to taste."
-  ],
+  "session_summary": "",
+  "session_summary_events": [],
   "story_status": "Dusk settles over the harbor town as lanterns flare alive around the cobbles of Town Square. People move with the same exhausted, hollow-eyed rhythm, repeating the same rumors: bloodstains in homes, missing hours, and mornings full of dread with no clear memory of what happened overnight. Some blame the reclusive wizard behind the iron fence, while others whisper that the town itself is cursed. You arrived to verify the rumors, but now you are standing inside them.",
-  "history": [
-    {
-      "role": "dm",
-      "content": "You arrive in a dusk-lit harbor town gripped by rumors of bloodstains, missing time, and whispered blame toward a reclusive wizard\u2014and the fear is real enough to taste."
-    }
-  ],
+  "history": [],
   "active_keys": [
     "Bronze Fountain Coin",
     "Copper Cup",

@@ -527,7 +527,7 @@
     "name": "Mayor Elric",
     "entity_type": "npc",
     "description": "Mayor Elric is a tired man in a well-kept coat, juggling merchants' demands and the growing panic over unexplained bloodstains. No one has truly gone missing, but he fears the town is fraying and doesn't know how much longer he can pretend things are under control.",
-    "location": "Copper Cup",
+    "location": "Town Hall",
     "skills": {
       "persuasion": 3,
       "insight": 2,
@@ -548,8 +548,7 @@
     ],
     "memory": [
       "Elric is balancing public calm against private panic and has delayed announcing full incident numbers.",
-      "He asked Scribe Loth to archive certain reports until facts can be verified.",
-      "The player persuaded me to leave my desk at Town Hall and join them at the Copper Cup for a drink. I needed the respite from the weight of recent events."
+      "He asked Scribe Loth to archive certain reports until facts can be verified."
     ]
   },
   {
@@ -650,7 +649,7 @@
     "name": "Player",
     "entity_type": "player",
     "description": "The player character investigating the harbor town mystery.",
-    "location": "Copper Cup",
+    "location": "Town Square",
     "skills": {
       "perception": 2,
       "investigation": 3,
@@ -668,11 +667,7 @@
       "player"
     ],
     "memory": [
-      "You came to town chasing rumors about bloodstains and missing memories.",
-      "Entered the Town Hall and found it quiet and solemn. An older woman with iron-grey hair sits at a desk managing ledgers. Several townspeople sit on benches looking worn. Noticed a faint metallic tang in the air beneath the smell of parchment and lamp oil. A bulletin board on the far wall has scattered notices, and beside it a hastily drawn map of the town with several locations marked in red.",
-      "Turn 1: Player left Town Square and entered the Town Hall.",
-      "Successfully persuaded Mayor Elric to leave Town Hall and accompany me to the Copper Cup for a drink. We walked together through Town Square and arrived at the tavern, where Mitch is sitting alone by the cold hearth.",
-      "Turn 2: Player successfully persuaded Mayor Elric to accompany them to the Copper Cup for a drink. The Mayor agrees and they depart Town Hall together, heading through Town Square toward the tavern."
+      "You came to town chasing rumors about bloodstains and missing memories."
     ]
   },
   {
