@@ -178,11 +178,23 @@ def get_world_location(
     model = _load_model(world_model_data_dir, game_state=game_state)
     resolved_key = _resolve_location_candidate(model, location_key) or _default_scene_location(model, game_state)
     if not resolved_key:
-        return {"success": True, "location": None, "reason": "No locations are available in the world model."}
+        return {
+            "success": True,
+            "location": None,
+            "reason": "No locations are available in the world model.",
+        }
     location = model.get_location(resolved_key)
     if location is None:
-        return {"success": False, "reason": f"Unknown location '{location_key}'."}
-    return {"success": True, "location": location.to_record(), "resolved_location_key": resolved_key}
+        return {
+            "success": False,
+            "reason": f"Unknown location '{location_key}'.",
+            "retryable": False,
+        }
+    return {
+        "success": True,
+        "location": location.to_record(),
+        "resolved_location_key": resolved_key,
+    }
 
 
 def upsert_world_location(
@@ -274,11 +286,25 @@ def get_world_entity(
     model = _load_model(world_model_data_dir, game_state=game_state)
     resolved_key = _resolve_entity_candidate(model, entity_key) or _default_scene_entity(model, game_state)
     if not resolved_key:
-        return {"success": True, "entity": None, "inventory": [], "reason": "No entities are available in the world model."}
+        return {
+            "success": True,
+            "entity": None,
+            "inventory": [],
+            "reason": "No entities are available in the world model.",
+        }
     entity = model.get_entity(resolved_key)
     if entity is None:
-        return {"success": False, "reason": f"Unknown entity '{entity_key}'."}
-    return {"success": True, "entity": entity.to_record(), "inventory": list(entity.inventory), "resolved_entity_key": resolved_key}
+        return {
+            "success": False,
+            "reason": f"Unknown entity '{entity_key}'.",
+            "retryable": False,
+        }
+    return {
+        "success": True,
+        "entity": entity.to_record(),
+        "inventory": list(entity.inventory),
+        "resolved_entity_key": resolved_key,
+    }
 
 
 def upsert_world_entity(
@@ -370,11 +396,23 @@ def get_world_item(
     model = _load_model(world_model_data_dir, game_state=game_state)
     resolved_key = _resolve_item_candidate(model, item_key) or _default_scene_item(model, game_state)
     if not resolved_key:
-        return {"success": True, "item": None, "reason": "No items are available in the world model."}
+        return {
+            "success": True,
+            "item": None,
+            "reason": "No items are available in the world model.",
+        }
     item = model.get_item(resolved_key)
     if item is None:
-        return {"success": False, "reason": f"Unknown item '{item_key}'."}
-    return {"success": True, "item": item.to_record(), "resolved_item_key": resolved_key}
+        return {
+            "success": False,
+            "reason": f"Unknown item '{item_key}'.",
+            "retryable": False,
+        }
+    return {
+        "success": True,
+        "item": item.to_record(),
+        "resolved_item_key": resolved_key,
+    }
 
 
 def upsert_world_item(

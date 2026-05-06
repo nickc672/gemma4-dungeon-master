@@ -78,7 +78,8 @@ class SnapshotBuilder:
     def _game_state_snapshot(self, orch) -> dict[str, Any]:
         return {
             "player_location": orch.game_state.player_location,
-            "discovered_keys": sorted(str(value) for value in orch.game_state.discovered_keys),
+            "visited_locations": sorted(str(value) for value in orch.game_state.visited_locations),
+            "discovered_locations": sorted(str(value) for value in orch.game_state.discovered_locations),
             "quest_flags": dict(sorted(orch.game_state.quest_flags.items())),
             "npc_locations": dict(sorted(orch.game_state.npc_locations.items())),
             "conversation_history": self._json_clone(orch.game_state.conversation_history),
@@ -114,16 +115,27 @@ class SnapshotBuilder:
             *[str(key) for key in scene.get("items_here", [])],
         }
 
+        visited_set = orch.game_state.visited_locations
+        discovered_set = orch.game_state.discovered_locations
+
         nodes = []
         for node in world.graph_nodes():
             key = str(node.get("key") or "").strip()
             if not key:
                 continue
             payload = dict(node)
+            host_location = world.location_for_key(key)
+            visited_flag = key in visited_set or (host_location and host_location in visited_set)
+            discovered_flag = (
+                visited_flag
+                or key in discovered_set
+                or (host_location and host_location in discovered_set)
+            )
             payload["flags"] = {
                 "current_location": key == current_location,
                 "in_scene": key in scene_keys,
-                "discovered": key in orch.discovered_keys or world.location_for_key(key) in orch.discovered_keys,
+                "visited": bool(visited_flag),
+                "discovered": bool(discovered_flag),
             }
             nodes.append(payload)
 
@@ -157,7 +169,8 @@ class SnapshotBuilder:
                 *[str(key) for key in scene.get("actors_here", []) if str(key).strip()],
                 *[str(key) for key in scene.get("items_here", []) if str(key).strip()],
             ],
-            "discovered_keys": sorted(str(value) for value in orch.discovered_keys),
+            "visited_locations": sorted(str(value) for value in orch.game_state.visited_locations),
+            "discovered_locations": sorted(str(value) for value in orch.game_state.discovered_locations),
             "game_state": self._game_state_snapshot(orch),
             "world_records": {
                 "story": world.story_record(),

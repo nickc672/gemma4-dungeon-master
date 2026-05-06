@@ -2,8 +2,47 @@ from __future__ import annotations
 
 from typing import Any
 
-from .story import GameState
-from .tool_runtime import ensure_entity_registry, get_runtime_world_model, normalize_key
+from .mechanics_tools import skill_check as run_skill_check
+from .story import GameState, mark_location_visited
+from .tool_runtime import (
+    ensure_entity_registry,
+    find_route_via_visited,
+    get_runtime_world_model,
+    normalize_key,
+    require_turn_orchestration_ctx,
+)
+
+
+HISTORY_CHECK_BASE_DC = 5
+HISTORY_CHECK_DC_PER_HOP = 3
+
+
+def _request_manual_history_roll(game_state: GameState, dc: int, context: str) -> int | None:
+    try:
+        ctx = require_turn_orchestration_ctx(game_state)
+    except Exception:
+        return None
+    mode = str(ctx.get("roll_mode") or "").strip().lower()
+    provider = ctx.get("manual_roll_provider")
+    if mode != "manual" or not callable(provider):
+        return None
+    request = {
+        "tool_name": "skill_check",
+        "phase": str(ctx.get("phase") or "phase_one"),
+        "arguments": {
+            "entity_key": "Player",
+            "skill": "history",
+            "dc": int(dc),
+            "context": str(context or ""),
+        },
+    }
+    try:
+        value = int(provider(request))
+    except Exception:
+        return None
+    if value < 1 or value > 20:
+        return None
+    return value
 
 
 def _resolve_target_key(model, raw_key: str) -> str:
@@ -28,6 +67,11 @@ def _resolve_target_key(model, raw_key: str) -> str:
         if needle in normalize_key(item.key) or needle in normalize_key(item.name):
             return item.key
     return ""
+
+
+def _history_check_dc(path: list[str]) -> int:
+    intermediate_count = max(0, len(path) - 2)
+    return HISTORY_CHECK_BASE_DC + HISTORY_CHECK_DC_PER_HOP * intermediate_count
 
 
 def check_can_interact(entity_key: str = "", game_state: GameState | None = None) -> dict[str, object]:
@@ -56,19 +100,129 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
                 "can_interact": True,
                 "entity_type": "location",
                 "reason": "You are already at this location.",
+                "path": [player_loc],
             }
         if location.key in current_location.connections:
             return {
                 "success": True,
                 "can_interact": True,
                 "entity_type": "location",
-                "reason": f"{location.key} is accessible from here.",
+                "reason": f"{location.key} is directly adjacent to {player_loc}.",
+                "path": [player_loc, location.key],
             }
+
+        # Non-adjacent. If the destination itself has been visited before,
+        # the player already knows the way, no History check needed. We
+        # still need a route to actually walk back, but the route only has
+        # to exist
+        if location.key in game_state.visited_locations:
+            route = find_route_via_visited(
+                model,
+                player_loc,
+                location.key,
+                game_state.visited_locations,
+            )
+            if route is not None and len(route) >= 2:
+                return {
+                    "success": True,
+                    "can_interact": True,
+                    "entity_type": "location",
+                    "reason": (
+                        f"{location.key} is not adjacent but has been visited "
+                        f"before; the player remembers the route via "
+                        f"{' -> '.join(route)}. No History check required."
+                    ),
+                    "path": list(route),
+                }
+            # unlikely, but if destination is in visited_locations but no path
+            # through visited intermediates connects it.
+            return {
+                "success": True,
+                "can_interact": False,
+                "entity_type": "location",
+                "reason": (
+                    f"{location.key} has been visited before but no current "
+                    "path through visited locations connects it to "
+                    f"{player_loc}. The route may have been altered."
+                ),
+            }
+
+        # Destination is non-adjacent and not previously visited. Look for
+        # a route whose intermediate steps are all visited locations.
+        route = find_route_via_visited(
+            model,
+            player_loc,
+            location.key,
+            game_state.visited_locations,
+        )
+        if route is None or len(route) < 3:
+            return {
+                "success": True,
+                "can_interact": False,
+                "entity_type": "location",
+                "reason": (
+                    f"{location.key} is not reachable from {player_loc} via any "
+                    "known route. The player would need to travel through "
+                    "unfamiliar territory to get there."
+                ),
+            }
+
+        # A route exists. Roll a History check to see if the player
+        # remembers the way.
+        dc = _history_check_dc(route)
+        roll_context = f"Recall the route from {player_loc} to {location.key}."
+        manual_value = _request_manual_history_roll(game_state, dc, roll_context)
+        check_kwargs: dict[str, object] = {
+            "entity_key": "Player",
+            "skill": "history",
+            "dc": dc,
+            "context": roll_context,
+            "game_state": game_state,
+        }
+        if manual_value is not None:
+            check_kwargs["_manual_roll"] = manual_value
+        check_payload = run_skill_check(**check_kwargs)
+        check_entry = dict(check_payload.get("check") or {}) if check_payload.get("success") else {}
+        passed = bool(check_entry.get("success", False))
+        history_summary = {
+            "rolled": True,
+            "skill": "history",
+            "dc": dc,
+            "roll": check_entry.get("roll"),
+            "modifier": check_entry.get("modifier"),
+            "total": check_entry.get("total"),
+            "passed": passed,
+            "path": list(route),
+            "intermediate_count": max(0, len(route) - 2),
+        }
+
+        if passed:
+            roll_total = check_entry.get("total")
+            return {
+                "success": True,
+                "can_interact": True,
+                "entity_type": "location",
+                "reason": (
+                    f"[History DC {dc} passed, total {roll_total}] "
+                    f"{location.key} is reachable via "
+                    f"{' -> '.join(route)}; the player recalls the way."
+                ),
+                "path": list(route),
+                "history_check": history_summary,
+            }
+        roll_total = check_entry.get("total")
         return {
             "success": True,
             "can_interact": False,
             "entity_type": "location",
-            "reason": f"{location.key} is not connected to {player_loc}.",
+            "reason": (
+                f"[History DC {dc} failed, total {roll_total}] "
+                f"{location.key} is not directly adjacent. The player "
+                f"tried to recall the route via {' -> '.join(route)} but "
+                "could not remember the way."
+            ),
+            "path": list(route),
+            "history_check": history_summary,
         }
 
     entity = model.get_entity(entity_key)
@@ -129,7 +283,12 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
 
 def move_to_location(location_key: str = "", game_state: GameState | None = None) -> dict[str, object]:
     if game_state is None:
-        return {"success": False, "new_location": None, "reason": "Missing game_state context."}
+        return {
+            "success": False,
+            "new_location": None,
+            "reason": "Missing game_state context.",
+            "retryable": False,
+        }
     model = get_runtime_world_model(game_state)
     if not str(location_key or "").strip():
         return {
@@ -146,26 +305,90 @@ def move_to_location(location_key: str = "", game_state: GameState | None = None
             "success": False,
             "new_location": None,
             "reason": f"Location '{location_key}' does not exist.",
+            "retryable": False,
         }
 
     current_location = model.get_location(game_state.player_location)
     if current_location is None:
-        return {"success": False, "new_location": None, "reason": "Invalid current location."}
-    if location_key == game_state.player_location:
-        return {"success": True, "new_location": location_key, "reason": "You are already here."}
-    if location_key not in current_location.connections:
         return {
             "success": False,
             "new_location": None,
-            "reason": f"Cannot move to {location_key}. Not connected to {game_state.player_location}.",
+            "reason": "Invalid current location.",
+            "retryable": False,
+        }
+    if location_key == game_state.player_location:
+        return {
+            "success": True,
+            "new_location": location_key,
+            "reason": "You are already here.",
+            "path": [location_key],
         }
 
-    if not model.move_entity("Player", location_key):
-        return {"success": False, "new_location": None, "reason": "Player entity is missing from the world model."}
+    # Find a route. Direct neighbor returns a 2-step path
+    route = find_route_via_visited(
+        model,
+        game_state.player_location,
+        location.key,
+        game_state.visited_locations,
+    )
+    if route is None or len(route) < 2:
+        return {
+            "success": False,
+            "new_location": None,
+            "reason": (
+                f"Cannot move to {location.key}. No route exists from "
+                f"{game_state.player_location} through visited locations."
+            ),
+            "retryable": False,
+        }
 
-    game_state.player_location = location.key
-    game_state.discovered_keys.add(location_key)
-    return {"success": True, "new_location": location.key, "reason": f"Moved to {location.key}."}
+    # Auto-route: walk the path one hop at a time. Every step must be a
+    # real connection in the world graph; we mark each location visited
+    # as we arrive there.
+    traversed: list[str] = [game_state.player_location]
+    for hop_index in range(1, len(route)):
+        prev_key = route[hop_index - 1]
+        next_key = route[hop_index]
+        prev_location = model.get_location(prev_key)
+        if prev_location is None or next_key not in prev_location.connections:
+            return {
+                "success": False,
+                "new_location": None,
+                "reason": (
+                    f"Auto-route broke at {prev_key} to {next_key}: that "
+                    "connection does not exist in the world graph."
+                ),
+                "path_attempted": list(route),
+                "path_traversed": traversed,
+                "retryable": False,
+            }
+        if not model.move_entity("Player", next_key):
+            return {
+                "success": False,
+                "new_location": None,
+                "reason": "Player entity is missing from the world model.",
+                "path_attempted": list(route),
+                "path_traversed": traversed,
+                "retryable": False,
+            }
+        game_state.player_location = next_key
+        mark_location_visited(game_state, next_key, model)
+        traversed.append(next_key)
+
+    if len(traversed) > 2:
+        reason = (
+            f"Auto-routed to {location.key} via "
+            f"{' -> '.join(traversed)} ({len(traversed) - 1} hops)."
+        )
+    else:
+        reason = f"Moved to {location.key}."
+
+    return {
+        "success": True,
+        "new_location": location.key,
+        "reason": reason,
+        "path": traversed,
+    }
 
 
 def get_current_context(game_state: GameState) -> dict[str, object]:
@@ -186,12 +409,18 @@ def get_current_context(game_state: GameState) -> dict[str, object]:
         "connected_locations": list(scene.get("connections") or []),
         "npcs_here": npcs_here,
         "items_here": list(scene.get("items_here") or []),
+        "visited_locations": sorted(game_state.visited_locations),
+        "discovered_locations": sorted(game_state.discovered_locations),
     }
 
 
 def move_npc(npc_key: str = "", new_location: str = "", game_state: GameState | None = None) -> dict[str, object]:
     if game_state is None:
-        return {"success": False, "reason": "Missing game_state context."}
+        return {
+            "success": False,
+            "reason": "Missing game_state context.",
+            "retryable": False,
+        }
     model = get_runtime_world_model(game_state)
     if not str(npc_key or "").strip() or not str(new_location or "").strip():
         return {"success": True, "reason": "Missing npc_key or new_location. No NPC movement applied."}
@@ -199,12 +428,24 @@ def move_npc(npc_key: str = "", new_location: str = "", game_state: GameState | 
     resolved_location = _resolve_target_key(model, new_location)
     npc = model.get_entity(resolved_npc or npc_key)
     if npc is None:
-        return {"success": False, "reason": f"NPC '{npc_key}' does not exist."}
+        return { 
+            "success": False,
+            "reason": f"NPC '{npc_key}' does not exist.",
+            "retryable": False,
+        }
     if npc.entity_type != "npc":
-        return {"success": False, "reason": f"'{npc_key}' is not an NPC."}
+        return {
+            "success": False,
+            "reason": f"'{npc_key}' is not an NPC.",
+            "retryable": False,
+        }
     location = model.get_location(resolved_location or new_location)
     if location is None:
-        return {"success": False, "reason": f"Location '{new_location}' does not exist."}
+        return {
+            "success": False,
+            "reason": f"Location '{new_location}' does not exist.",
+            "retryable": False,
+        }
 
     model.move_entity(npc.key, location.key)
     game_state.npc_locations[npc.key] = location.key
@@ -272,7 +513,15 @@ VALIDATE_TOOLS = [
         "type": "function",
         "function": {
             "name": "check_can_interact",
-            "description": "Check if player can interact with an entity. Use this before narrating any interaction.",
+            "description": (
+                "Check if the player can interact with an entity or travel to a "
+                "location. For locations: returns can_interact=True if the target "
+                "is the current location or directly adjacent. For non-adjacent "
+                "locations, this tool searches for a route through visited "
+                "locations and rolls a History check (DC 5 + 2 per intermediate "
+                "hop) to see if the player remembers the way. Use this before "
+                "narrating any movement or interaction."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -300,7 +549,13 @@ SCENE_TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "move_to_location",
-            "description": "Move player to a connected location.",
+            "description": (
+                "Move the player to a destination. Direct adjacency moves in a "
+                "single step. Non-adjacent destinations auto-route through "
+                "visited locations when a path exists; the player walks each "
+                "hop and every traversed location is marked visited. Fails if "
+                "no route through visited locations reaches the destination."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -337,6 +592,8 @@ SCENE_TOOL_DEFINITIONS = [
 
 
 __all__ = [
+    "HISTORY_CHECK_BASE_DC",
+    "HISTORY_CHECK_DC_PER_HOP",
     "SCENE_TOOL_DEFINITIONS",
     "VALIDATE_TOOLS",
     "check_can_interact",

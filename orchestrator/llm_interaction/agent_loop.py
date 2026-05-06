@@ -237,11 +237,16 @@ class AgentLoop:
                 block_reason = hooks.response_hook(assistant_text, call_dicts, iteration)
                 if block_reason:
                     round_info["response_block_reason"] = block_reason
+                    if call_dicts:
+                        attempted = ", ".join(str(c.get("name") or "?") for c in call_dicts)
+                        suffix = f" You attempted to call: {attempted}. Re-issue any you still need, following the rules."
+                    else:
+                        suffix = ""
                     convo.append({
                         "role": "user",
                         "content": (
                             "Your last response was invalid for this phase: "
-                            f"{block_reason} Re-respond and follow the required structure."
+                            f"{block_reason}{suffix} Re-respond and follow the required structure."
                         ),
                     })
                     continue
@@ -288,14 +293,23 @@ class AgentLoop:
                     pre_result = {"allow": True}
 
                 if not pre_result.get("allow", True):
+                    retryable = bool(pre_result.get("retryable", False))
+                    reason = str(pre_result.get("reason", "Blocked by pre_tool_use hook."))
+                    suffix = "" if retryable else " DO NOT RETRY this call."
                     tool_payload: dict[str, Any] = {
                         "ok": False,
-                        "error": pre_result.get("reason", "Blocked by pre_tool_use hook."),
+                        "error": f"{reason}{suffix}",
+                        "blocked": True,
+                        "retryable": retryable,
                     }
                 elif tool_executor is None:
                     tool_payload = {
                         "ok": False,
-                        "error": f"No tool executor configured for '{tool_name}'.",
+                        "error": (
+                            f"No tool executor configured for '{tool_name}'."
+                            " DO NOT RETRY this call."
+                        ),
+                        "retryable": False,
                     }
                 else:
                     try:
@@ -304,12 +318,32 @@ class AgentLoop:
                             tool_payload = copy.deepcopy(result)
                         else:
                             tool_payload = {"ok": True, "result": copy.deepcopy(result)}
+
+                        # If the tool itself reports a non-retryable failure,
+                        # append a DO NOT RETRY hint into whichever text field the tool used (error / reason / message).
+                        success = tool_payload.get("ok")
+                        if success is None:
+                            success = tool_payload.get("success", True)
+                        if not success and tool_payload.get("retryable") is False:
+                            for key in ("error", "reason", "message"):
+                                if key in tool_payload and isinstance(tool_payload[key], str):
+                                    if "DO NOT RETRY" not in tool_payload[key]:
+                                        tool_payload[key] = (
+                                            str(tool_payload[key]) + " DO NOT RETRY this call."
+                                        )
+                                    break
                     except Exception as exc:
                         # The Streamlit UI signals "wait for player roll" via a
-                        # sentinel exception — let it escape the loop untouched.
+                        # sentinel exception - let it escape the loop untouched.
                         if DMC_ROLL_REQUIRED_SENTINEL in str(exc):
                             raise
-                        tool_payload = {"ok": False, "error": str(exc)}
+                        # Execution exceptions default to retryable=True since
+                        # they are usually network, intermittent bug.
+                        tool_payload = {
+                            "ok": False,
+                            "error": str(exc),
+                            "retryable": True,
+                        }
 
                 tool_entry = {
                     "iteration": iteration,
