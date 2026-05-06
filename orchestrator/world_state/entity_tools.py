@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .story import GameState
-from .tool_runtime import DynamicSentenceMemory, entity_public_view, find_entity
+from .tool_runtime import DynamicSentenceMemory, entity_public_view, find_world_object
 
 
 def get_entity_state(
@@ -18,11 +18,11 @@ def get_entity_state(
         }
 
     resolved_entity = str(entity_key or "").strip() or "Player"
-    entity = find_entity(resolved_entity, game_state)
+    entity = find_world_object(resolved_entity, game_state)
     if entity is None:
         return {
             "success": False,
-            "reason": f"Entity '{entity_key}' not found.",
+            "reason": f"World object '{entity_key}' not found.",
             "retryable": False,
         }
 
@@ -51,11 +51,11 @@ def retrieve_memory_tool(
         }
 
     resolved_entity = str(entity_name or "").strip() or "Player"
-    entity = find_entity(resolved_entity, game_state)
+    entity = find_world_object(resolved_entity, game_state)
     if entity is None:
         return {
             "success": False,
-            "message": f"Entity '{resolved_entity}' is not registered.",
+            "message": f"World object '{resolved_entity}' is not registered.",
             "memories": [],
             "retryable": False,
         }
@@ -94,11 +94,11 @@ def write_memory_tool(
         }
 
     resolved_entity = str(entity_name or "").strip() or "Player"
-    entity = find_entity(resolved_entity, game_state)
+    entity = find_world_object(resolved_entity, game_state)
     if entity is None:
         return {
             "success": False,
-            "message": f"Entity '{resolved_entity}' is not registered.",
+            "message": f"World object '{resolved_entity}' is not registered.",
             "retryable": False,
         }
 
@@ -126,11 +126,11 @@ ENTITY_TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_entity_state",
-            "description": "Read detailed state variables for an entity (location, skills, stats, memory count).",
+            "description": "Read detailed state variables for a world object (location, actor, or item).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "entity_key": {"type": "string", "description": "Entity key or name."},
+                    "entity_key": {"type": "string", "description": "World object key or name."},
                     "include_memory_preview": {"type": "boolean"},
                     "memory_preview": {"type": "integer", "minimum": 0, "maximum": 20},
                 },
@@ -142,11 +142,11 @@ ENTITY_TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "retrieve_memory_tool",
-            "description": "Retrieve relevant memory snippets for an entity using semantic search when available.",
+            "description": "Retrieve relevant memory snippets for a world object using semantic search when available.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "entity_name": {"type": "string", "description": "Entity name or key."},
+                    "entity_name": {"type": "string", "description": "World object name or key."},
                     "context": {"type": "string", "description": "Query context for similarity search."},
                     "top_n": {"type": "integer", "minimum": 1, "maximum": 20},
                 },
@@ -158,11 +158,11 @@ ENTITY_TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "write_memory_tool",
-            "description": "Write a new memory sentence into an entity memory store.",
+            "description": "Write a new memory sentence into a world object's memory store.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "entity_name": {"type": "string", "description": "Entity name or key."},
+                    "entity_name": {"type": "string", "description": "World object name or key."},
                     "memory": {"type": "string", "description": "Sentence or fact to store."},
                     "context": {"type": "string", "description": "Alias for memory (notebook compatibility)."},
                     "relevance": {"type": "number", "minimum": 0, "maximum": 1000},

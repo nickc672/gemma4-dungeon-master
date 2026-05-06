@@ -291,7 +291,7 @@ class StoryEngine:
         location = self.world.get_location(current_location)
         if location is not None:
             entity_info[location.key] = apply_relevant_flags(location.key, {
-                "node_type": "location",
+                "node_type": location.type,
                 "connections": ", ".join(location.connections) if location.connections else "none",
                 "location": location.key,
                 "visited": "yes" if location.key in self.game_state.visited_locations else "no",
@@ -303,7 +303,7 @@ class StoryEngine:
             if adjacent is None:
                 continue
             entity_info[adjacent.key] = apply_relevant_flags(adjacent.key, {
-                "node_type": "location",
+                "node_type": adjacent.type,
                 "connections": ", ".join(adjacent.connections) if adjacent.connections else "none",
                 "location": adjacent.key,
                 "visited": "yes" if adjacent.key in self.game_state.visited_locations else "no",
@@ -337,7 +337,7 @@ class StoryEngine:
             if item is None:
                 continue
             info = {
-                "node_type": "item",
+                "node_type": item.type,
                 "location": self.world.location_for_key(item.key) or item.holder_key,
             }
             if item.holder_kind == "entity":

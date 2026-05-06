@@ -98,7 +98,7 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
             return {
                 "success": True,
                 "can_interact": True,
-                "entity_type": "location",
+                "entity_type": location.type,
                 "reason": "You are already at this location.",
                 "path": [player_loc],
             }
@@ -106,7 +106,7 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
             return {
                 "success": True,
                 "can_interact": True,
-                "entity_type": "location",
+                "entity_type": location.type,
                 "reason": f"{location.key} is directly adjacent to {player_loc}.",
                 "path": [player_loc, location.key],
             }
@@ -126,7 +126,7 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
                 return {
                     "success": True,
                     "can_interact": True,
-                    "entity_type": "location",
+                    "entity_type": location.type,
                     "reason": (
                         f"{location.key} is not adjacent but has been visited "
                         f"before; the player remembers the route via "
@@ -139,7 +139,7 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
             return {
                 "success": True,
                 "can_interact": False,
-                "entity_type": "location",
+                "entity_type": location.type,
                 "reason": (
                     f"{location.key} has been visited before but no current "
                     "path through visited locations connects it to "
@@ -159,7 +159,7 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
             return {
                 "success": True,
                 "can_interact": False,
-                "entity_type": "location",
+                "entity_type": location.type,
                 "reason": (
                     f"{location.key} is not reachable from {player_loc} via any "
                     "known route. The player would need to travel through "
@@ -201,7 +201,7 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
             return {
                 "success": True,
                 "can_interact": True,
-                "entity_type": "location",
+                "entity_type": location.type,
                 "reason": (
                     f"[History DC {dc} passed, total {roll_total}] "
                     f"{location.key} is reachable via "
@@ -214,7 +214,7 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
         return {
             "success": True,
             "can_interact": False,
-            "entity_type": "location",
+            "entity_type": location.type,
             "reason": (
                 f"[History DC {dc} failed, total {roll_total}] "
                 f"{location.key} is not directly adjacent. The player "
@@ -254,7 +254,7 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
             return {
                 "success": True,
                 "can_interact": True,
-                "entity_type": "item",
+                "entity_type": item.type,
                 "reason": f"{item.key} is here.",
             }
         if item.holder_kind == "entity":
@@ -263,13 +263,13 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
                 return {
                     "success": True,
                     "can_interact": True,
-                    "entity_type": "item",
+                    "entity_type": item.type,
                     "reason": f"{item.key} is being carried by {holder.key}.",
                 }
         return {
             "success": True,
             "can_interact": False,
-            "entity_type": "item",
+            "entity_type": item.type,
             "reason": f"{item.key} is at {item.holder_key}.",
         }
 
@@ -463,9 +463,9 @@ def list_scene_entities(game_state: GameState) -> dict[str, object]:
         entities.append(
             {
                 "key": location.key,
-                "entity_type": "location",
+                "entity_type": location.type,
                 "location": location.key,
-                "memory_count": 0,
+                "memory_count": location.memory_count,
                 "skills": [],
                 "connections": list(location.connections),
             }
@@ -493,9 +493,9 @@ def list_scene_entities(game_state: GameState) -> dict[str, object]:
         entities.append(
             {
                 "key": item.key,
-                "entity_type": "item",
+                "entity_type": item.type,
                 "location": scene.get("location"),
-                "memory_count": 0,
+                "memory_count": item.memory_count,
                 "skills": [],
                 "portable": bool(item.portable),
             }

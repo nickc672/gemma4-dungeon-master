@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .entity import DynamicSentenceMemory, Entity
+from .entity import BaseEntity, DynamicSentenceMemory, Entity, Player
 from .entity_tools import (
     ENTITY_TOOL_DEFINITIONS,
     get_entity_state,
@@ -64,8 +64,10 @@ from .turn_tools import (
 
 __all__ = [
     "DynamicSentenceMemory",
+    "BaseEntity",
     "ENTITY_TOOL_DEFINITIONS",
     "Entity",
+    "Player",
     "FINALIZE_TURN_TOOL_DEFINITION",
     "FINALIZE_WRITES_TOOL_DEFINITION",
     "MECHANICS_TOOL_DEFINITIONS",

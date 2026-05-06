@@ -4,10 +4,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .entity import (
+    BaseEntity,
     DEFAULT_PLAYER_SKILLS,
     DEFAULT_PLAYER_STATS,
     DynamicSentenceMemory,
     Entity,
+    Player,
 )
 from .story import GameState, mark_location_visited, recompute_discovered_locations
 from .world_model import WorldModel, build_world_model
@@ -148,10 +150,9 @@ def _ensure_world_model_player(model: WorldModel, game_state: GameState) -> Enti
     player = model.get_entity("Player")
     if player is None:
         start_location = model.starting_location or game_state.player_location or "Town Square"
-        player = Entity(
+        player = Player(
             key="Player",
             name="Player",
-            entity_type="player",
             description="The player character controlled by the user.",
             location=start_location,
             skills=dict(DEFAULT_PLAYER_SKILLS),
@@ -239,7 +240,12 @@ def find_entity(entity_key: str, game_state: GameState) -> Optional[Entity]:
     return registry.get(normalize_key(entity_key))
 
 
-def entity_public_view(entity: Entity, *, include_memory_preview: bool = False, memory_preview: int = 3) -> dict[str, Any]:
+def find_world_object(object_key: str, game_state: GameState) -> Optional[BaseEntity]:
+    model = get_runtime_world_model(game_state)
+    return model.get_object(object_key)
+
+
+def entity_public_view(entity: BaseEntity, *, include_memory_preview: bool = False, memory_preview: int = 3) -> dict[str, Any]:
     return entity.to_public_view(
         include_memory_preview=include_memory_preview,
         memory_preview=memory_preview,
@@ -267,6 +273,8 @@ def require_turn_orchestration_ctx(game_state: GameState) -> dict[str, Any]:
 __all__ = [
     "DynamicSentenceMemory",
     "Entity",
+    "BaseEntity",
+    "Player",
     "SKILL_TO_STAT",
     "TODO_ACTIVE_STATUSES",
     "TODO_ALLOWED_STATUSES",
@@ -276,6 +284,7 @@ __all__ = [
     "ensure_entity_registry",
     "entity_public_view",
     "find_entity",
+    "find_world_object",
     "find_route_via_visited",
     "get_runtime_world_model",
     "mark_location_visited",

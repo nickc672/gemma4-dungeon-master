@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .entity import Entity
+from .entity import BaseEntity, Entity
 from .item import Item
 from .location import Location
 
@@ -66,6 +66,18 @@ class WorldModel:
     def add_item(self, item: Item) -> None:
         self.items[_normalize_key(item.key)] = item
 
+    def add_object(self, value: BaseEntity) -> None:
+        if isinstance(value, Location):
+            self.add_location(value)
+            return
+        if isinstance(value, Item):
+            self.add_item(value)
+            return
+        if isinstance(value, Entity):
+            self.add_entity(value)
+            return
+        raise TypeError(f"Unsupported world object type: {type(value).__name__}")
+
     def get_location(self, key: str) -> Optional[Location]:
         return self.locations.get(_normalize_key(key))
 
@@ -75,12 +87,25 @@ class WorldModel:
     def get_item(self, key: str) -> Optional[Item]:
         return self.items.get(_normalize_key(key))
 
+    def get_object(self, key: str) -> Optional[BaseEntity]:
+        location = self.get_location(key)
+        if location is not None:
+            return location
+        entity = self.get_entity(key)
+        if entity is not None:
+            return entity
+        return self.get_item(key)
+
     def has_key(self, key: str) -> bool:
-        return (
-            self.get_location(key) is not None
-            or self.get_entity(key) is not None
-            or self.get_item(key) is not None
-        )
+        return self.get_object(key) is not None
+
+    def iter_objects(self) -> list[BaseEntity]:
+        values: list[BaseEntity] = [
+            *self.locations.values(),
+            *self.entities.values(),
+            *self.items.values(),
+        ]
+        return sorted(values, key=lambda value: (value.type, value.key.lower()))
 
     def all_keys(self) -> list[str]:
         keys = [
@@ -91,13 +116,15 @@ class WorldModel:
         return sorted(keys, key=str.lower)
 
     def key_kind(self, key: str) -> str:
-        if self.get_location(key) is not None:
-            return "location"
+        location = self.get_location(key)
+        if location is not None:
+            return location.type
         entity = self.get_entity(key)
         if entity is not None:
-            return entity.entity_type
-        if self.get_item(key) is not None:
-            return "item"
+            return entity.type
+        item = self.get_item(key)
+        if item is not None:
+            return item.type
         return ""
 
     def location_for_key(self, key: str) -> str:
@@ -142,6 +169,15 @@ class WorldModel:
             if normalized_key and item.holder_key != normalized_key:
                 continue
             records.append(item.to_record())
+        return records
+
+    def list_object_records(self, object_type: str | None = None) -> list[dict[str, Any]]:
+        normalized_type = str(object_type or "").strip().lower()
+        records: list[dict[str, Any]] = []
+        for value in self.iter_objects():
+            if normalized_type and value.type != normalized_type:
+                continue
+            records.append(value.to_record())
         return records
 
     def actors_at(self, location_key: str) -> List[Entity]:
@@ -250,7 +286,7 @@ class WorldModel:
             nodes.append(
                 {
                     "key": location.key,
-                    "kind": "location",
+                    "kind": location.type,
                     "description": location.description,
                     "location": location.key,
                 }
@@ -259,7 +295,7 @@ class WorldModel:
             nodes.append(
                 {
                     "key": entity.key,
-                    "kind": entity.entity_type,
+                    "kind": entity.type,
                     "description": entity.description,
                     "location": entity.location,
                 }
@@ -268,7 +304,7 @@ class WorldModel:
             nodes.append(
                 {
                     "key": item.key,
-                    "kind": "item",
+                    "kind": item.type,
                     "description": item.description,
                     "location": self.location_for_key(item.key),
                     "holder_kind": item.holder_kind,
