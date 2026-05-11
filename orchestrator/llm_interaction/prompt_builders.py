@@ -52,6 +52,7 @@ class PromptConfig:
     p2_scene                 - current scene snapshot (pre-write)
     p2_action_results        - Phase 1 tool results (rolls, checks)
     p2_player_location_before - where the player was before this turn
+    p2_unresolved_targets    - targets Phase 1 could not resolve in check_can_interact
     """
 
     # Phase 1
@@ -75,6 +76,7 @@ class PromptConfig:
     p2_scene: bool = True
     p2_action_results: bool = True
     p2_player_location_before: bool = True
+    p2_unresolved_targets: bool = True
 
 
 DEFAULT_PROMPT_CONFIG = PromptConfig()
@@ -109,7 +111,7 @@ def _args_summary(args: dict) -> str:
             continue
         val = str(v)
         if len(val) > 40:
-            val = val[:40] + "…"
+            val = val[:40] + "..."
         parts.append(f"{k}={val!r}")
     return ", ".join(parts)
 
@@ -129,7 +131,7 @@ def _format_tool_call_log(tool_calls: list[dict] | None) -> str:
         args_str = _args_summary(call.get("arguments") or {})
         entry = f"- {call.get('name')}({args_str}): {label}"
         if reason:
-            entry += f" — {reason}"
+            entry += f" - {reason}"
         lines.append(entry)
     return "\n".join(lines)
 
@@ -308,6 +310,7 @@ def build_phase_two_prompt(
     narration: str,
     action_results: list[dict] | None,
     world_before: dict,
+    unresolved_targets: list[str] | None = None,
     cfg: PromptConfig = DEFAULT_PROMPT_CONFIG,
 ) -> str:
     tool_log = _format_tool_call_log(phase_one_tool_calls)
@@ -349,6 +352,25 @@ def build_phase_two_prompt(
     sections.append(
         f"# Phase 1 Mechanics Results (rolls, checks)\n" + "\n".join(action_lines)
     )
+
+    # any targets Phase 1 attempted to resolve but could not find.
+    # Phase 2 uses this list to decide whether to create_npc / create_item should
+    if cfg.p2_unresolved_targets:
+        targets = list(unresolved_targets or [])
+        if targets:
+            target_lines = "\n".join(f"- {t}" for t in targets)
+            sections.append(
+                f"# Unresolved Interaction Targets\n"
+                f"Phase 1 attempted to look up the following targets but they do not "
+                f"exist in the world model yet. If the narration describes the player "
+                f"directly interacting with any of these, call create_npc or create_item "
+                f"to register them.\n{target_lines}"
+            )
+        else:
+            sections.append(
+                "# Unresolved Interaction Targets\n"
+                "None. All targets referenced in Phase 1 resolved to existing world objects."
+            )
 
     if cfg.p2_player_location_before:
         sections.append(

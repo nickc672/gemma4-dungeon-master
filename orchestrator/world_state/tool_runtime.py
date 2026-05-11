@@ -104,6 +104,8 @@ def apply_turn_ctx_defaults(ctx: dict[str, Any]) -> dict[str, Any]:
     ctx.setdefault("todo_summary", "")
     ctx.setdefault("notes", [])
     ctx.setdefault("current_location", "")
+    ctx.setdefault("unresolved_interaction_targets", [])
+    ctx.setdefault("creation_counts", {"entities": 0, "items": 0})
     return ctx
 
 
@@ -270,6 +272,40 @@ def require_turn_orchestration_ctx(game_state: GameState) -> dict[str, Any]:
     return apply_turn_ctx_defaults(ctx)
 
 
+def get_runtime_alias_registry(game_state: GameState) -> Dict[str, str]:
+    """Return the mutable alias-to-canonical-key mapping stored on game_state."""
+    registry = getattr(game_state, "_runtime_alias_registry", None)
+    if registry is None:
+        registry = {}
+        setattr(game_state, "_runtime_alias_registry", registry)
+    return registry
+
+
+def register_entity_aliases(game_state: GameState, canonical_key: str, aliases: List[str]) -> None:
+    """
+    Register one or more surface-form aliases for a world object.
+
+    The canonical key itself is always registered so direct key lookups
+    through the alias path also work. Existing aliases pointing to a
+    different key are silently overwritten by the new canonical key.
+    """
+    registry = get_runtime_alias_registry(game_state)
+    registry[normalize_key(canonical_key)] = canonical_key
+    for alias in aliases:
+        norm = normalize_key(alias)
+        if norm:
+            registry[norm] = canonical_key
+
+
+def resolve_alias(game_state: GameState, name: str) -> Optional[str]:
+    """
+    Return the canonical world-object key if name is a registered alias,
+    or None if no alias mapping exists for the given name.
+    """
+    registry = get_runtime_alias_registry(game_state)
+    return registry.get(normalize_key(name))
+
+
 __all__ = [
     "DynamicSentenceMemory",
     "Entity",
@@ -279,6 +315,7 @@ __all__ = [
     "TODO_ACTIVE_STATUSES",
     "TODO_ALLOWED_STATUSES",
     "TODO_FINAL_STATUSES",
+    "apply_turn_ctx_defaults",
     "bind_turn_orchestration_ctx",
     "clear_turn_orchestration_ctx",
     "ensure_entity_registry",
@@ -286,11 +323,14 @@ __all__ = [
     "find_entity",
     "find_world_object",
     "find_route_via_visited",
+    "get_runtime_alias_registry",
     "get_runtime_world_model",
     "mark_location_visited",
     "normalize_key",
     "recompute_discovered_locations",
+    "register_entity_aliases",
     "require_turn_orchestration_ctx",
+    "resolve_alias",
     "get_world_checkpoint_root",
     "save_runtime_world_checkpoint",
     "set_world_checkpoint_root",

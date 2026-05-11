@@ -29,6 +29,8 @@ from .turn_tools import (
 )
 from .world_model_tools import (
     WORLD_MODEL_TOOL_DEFINITIONS,
+    create_item,
+    create_npc,
     execute_world_model_tool,
     get_world_entity,
     get_world_item,
@@ -38,6 +40,7 @@ from .world_model_tools import (
     list_world_entities,
     list_world_items,
     list_world_locations,
+    move_world_item,
 )
 
 
@@ -70,6 +73,10 @@ RUNTIME_TOOL_HANDLERS: Dict[str, RuntimeToolHandler] = {
     "get_world_entity": get_world_entity,
     "list_world_items": list_world_items,
     "get_world_item": get_world_item,
+    # Phase 2 write tools
+    "move_world_item": move_world_item,
+    "create_npc": create_npc,
+    "create_item": create_item,
 }
 
 WORLD_MODEL_READ_TOOL_NAMES = (
@@ -138,16 +145,29 @@ PHASE_2_TOOL_NAMES = (
     "move_to_location",
     "move_npc",
     "write_memory_tool",
+    "move_world_item",
+    "create_npc",
+    "create_item",
 )
+
+# Names of the new spawn tools - used in pipeline hooks and response guards.
+SPAWN_TOOL_NAMES = frozenset({"create_npc", "create_item"})
 
 PHASE_1_TOOL_DEFINITIONS = [
     tool for tool in TOOL_DEFINITIONS
     if tool.get("function", {}).get("name") in PHASE_1_TOOL_NAMES
 ]
 
+# Phase 2 tools span two definition lists: the standard TOOL_DEFINITIONS
+# (scene writes) and WORLD_MODEL_TOOL_DEFINITIONS (item/entity writes).
+_PHASE_2_NAMES_SET = set(PHASE_2_TOOL_NAMES)
+
 PHASE_2_TOOL_DEFINITIONS = [
     tool for tool in TOOL_DEFINITIONS
-    if tool.get("function", {}).get("name") in PHASE_2_TOOL_NAMES
+    if tool.get("function", {}).get("name") in _PHASE_2_NAMES_SET
+] + [
+    tool for tool in WORLD_MODEL_TOOL_DEFINITIONS
+    if tool.get("function", {}).get("name") in _PHASE_2_NAMES_SET
 ]
 
 
@@ -301,6 +321,25 @@ def _normalize_tool_arguments(
         if new_location is not None:
             args["new_location"] = str(new_location).strip()
 
+    if tool_name == "create_npc":
+        name = _first_present(args, "name", "entity_name", "npc_name", "character_name")
+        if name is not None:
+            args["name"] = str(name).strip()
+        location = _first_present(args, "location", "location_key", "at")
+        if location is not None:
+            args["location"] = str(location).strip()
+
+    if tool_name == "create_item":
+        name = _first_present(args, "name", "item_name", "object_name")
+        if name is not None:
+            args["name"] = str(name).strip()
+        holder_kind = _first_present(args, "holder_kind", "kind", "type")
+        if holder_kind is not None:
+            args["holder_kind"] = str(holder_kind).strip()
+        holder_key = _first_present(args, "holder_key", "holder", "location_key", "location", "entity_key")
+        if holder_key is not None:
+            args["holder_key"] = str(holder_key).strip()
+
     return args
 
 
@@ -338,6 +377,7 @@ __all__ = [
     "PHASE_2_TOOL_NAMES",
     "RUNTIME_TOOL_HANDLERS",
     "RUNTIME_TOOL_NAMES",
+    "SPAWN_TOOL_NAMES",
     "TOOL_DEFINITION_GROUPS",
     "TOOL_DEFINITIONS",
     "TOOL_NAMES_BY_GROUP",

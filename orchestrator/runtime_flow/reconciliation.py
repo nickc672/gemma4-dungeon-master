@@ -45,6 +45,8 @@ def build_runtime_state_snapshot(engine: Any) -> dict[str, Any]:
         "session_summary": list(engine.summary.events),
         "entities": entities,
         "items": items,
+        "entity_keys": sorted(entities.keys()),
+        "item_keys": sorted(items.keys()),
     }
 
 
@@ -53,6 +55,18 @@ def diff_runtime_state(before: dict[str, Any], after: dict[str, Any]) -> dict[st
     after_entities = dict(after.get("entities") or {})
     before_items = dict(before.get("items") or {})
     after_items = dict(after.get("items") or {})
+
+    # Entity creation / deletion
+    before_entity_keys = set(before.get("entity_keys") or before_entities.keys())
+    after_entity_keys = set(after.get("entity_keys") or after_entities.keys())
+    entities_created = sorted(after_entity_keys - before_entity_keys)
+    entities_removed = sorted(before_entity_keys - after_entity_keys)
+
+    # Item creation / deletion
+    before_item_keys = set(before.get("item_keys") or before_items.keys())
+    after_item_keys = set(after.get("item_keys") or after_items.keys())
+    items_created = sorted(after_item_keys - before_item_keys)
+    items_removed = sorted(before_item_keys - after_item_keys)
 
     entity_location_changes: list[dict[str, Any]] = []
     memory_changes: list[dict[str, Any]] = []
@@ -157,6 +171,10 @@ def diff_runtime_state(before: dict[str, Any], after: dict[str, Any]) -> dict[st
         "entity_location_changes": entity_location_changes,
         "item_holder_changes": item_holder_changes,
         "memory_changes": memory_changes,
+        "entities_created": entities_created,
+        "entities_removed": entities_removed,
+        "items_created": items_created,
+        "items_removed": items_removed,
     }
 
 
@@ -175,7 +193,6 @@ def build_story_status(player_location: str, turn_summary: str, blocked_reason: 
 
 
 def build_turn_memory_entry(
-    turn_number: int,
     player_input: str,
     turn_summary: str,
     blocked_reason: str,
@@ -190,10 +207,7 @@ def build_turn_memory_entry(
     if not fragments and player_action:
         fragments.append(f"Player attempted: {player_action}")
 
-    payload = " ".join(fragment for fragment in fragments if fragment)
-    if not payload:
-        return ""
-    return f"Turn {int(turn_number)}: {payload}"
+    return " ".join(fragment for fragment in fragments if fragment)
 
 
 def reconcile_turn(
@@ -218,82 +232,38 @@ def reconcile_turn(
             fixes.append("Aligned game_state.player_location with the runtime Player entity.")
         elif not player.location and engine.game_state.player_location:
             player.set_location(engine.game_state.player_location)
-            fixes.append("Aligned the runtime Player entity with game_state.player_location.")
+            fixes.append("Back-filled missing Player. location from game_state.player_location.")
 
-    current_location = str(engine.game_state.player_location or "").strip()
-    if current_location:
-        # The player is here, so this location must be in visited.
-        # discovered_locations is then derived from all visited neighbors.
-        if current_location not in engine.game_state.visited_locations:
-            engine.game_state.visited_locations.add(current_location)
-        recompute_discovered_locations(engine.game_state, engine.world)
-        # Mirror onto the engine for code paths that read engine.visited_locations
-        # / engine.discovered_locations directly.
-        engine.visited_locations = engine.game_state.visited_locations
-        engine.discovered_locations = engine.game_state.discovered_locations
+    world_after = build_runtime_state_snapshot(engine)
+    diff = diff_runtime_state(world_before, world_after)
 
-    engine.game_state.npc_locations = {
-        entity.key: entity.location
-        for entity in engine.world.entities.values()
-        if entity.entity_type == "npc" and entity.location
-    }
-
-    turn_memory = build_turn_memory_entry(
-        turn_number=turn_number,
-        player_input=player_input,
-        turn_summary=turn_summary,
-        blocked_reason=blocked_reason,
-    )
-    if player is not None and turn_memory and turn_memory not in player.memory.sentences:
-        player.add_memory(turn_memory)
-        fixes.append("Appended a factual player turn-memory entry for retrieval/debugging.")
-
-    story_status = build_story_status(
+    new_story_status = build_story_status(
         player_location=engine.game_state.player_location,
         turn_summary=turn_summary,
         blocked_reason=blocked_reason,
     )
-    engine.story_status = story_status
+    engine.story_status = new_story_status
 
-    summary_line = _compact_text(turn_summary, limit=260) or _compact_text(blocked_reason, limit=160)
-    if summary_line:
-        engine.summary.add(f"Turn {int(turn_number)}", summary_line)
-    else:
-        engine.summary.add(f"Turn {int(turn_number)}", _compact_text(player_input, limit=180))
+    memory_entry = build_turn_memory_entry(
+        player_input=player_input,
+        turn_summary=turn_summary,
+        blocked_reason=blocked_reason,
+    )
+    if memory_entry:
+        engine.summary.add(f"Turn {int(turn_number)}", memory_entry)
 
-    conversation_entry = {
-        "turn": int(turn_number),
-        "player_input": str(player_input or "").strip(),
-        "turn_summary": str(turn_summary or "").strip(),
-        "blocked_reason": str(blocked_reason or "").strip(),
-        "narration": str(narration or "").strip(),
-        "action_results": list(action_results or []),
-        "story_status": story_status,
-        "turn_memory": turn_memory,
-    }
-    engine.game_state.conversation_history.append(conversation_entry)
-    if len(engine.game_state.conversation_history) > 50:
-        engine.game_state.conversation_history = engine.game_state.conversation_history[-50:]
+    if fixes:
+        diff["reconciliation_fixes"] = fixes
 
-    validation_errors = engine.world.validate()
-    world_after = build_runtime_state_snapshot(engine)
+    # Surface newly created entities and items in the diff for logging.
+    if diff.get("entities_created"):
+        diff["reconciliation_notes"] = diff.get("reconciliation_notes") or []
+        for key in diff["entities_created"]:
+            diff["reconciliation_notes"].append(f"Entity created this turn: {key}")
+    if diff.get("items_created"):
+        diff["reconciliation_notes"] = diff.get("reconciliation_notes") or []
+        for key in diff["items_created"]:
+            diff["reconciliation_notes"].append(f"Item created this turn: {key}")
 
-    return {
-        "applied_fixes": fixes,
-        "validation_errors": validation_errors,
-        "turn_memory": turn_memory,
-        "story_status": story_status,
-        "conversation_entry": conversation_entry,
-        "delta": diff_runtime_state(world_before, world_after),
-        "world_before": world_before,
-        "world_after": world_after,
-    }
-
-
-__all__ = [
-    "build_runtime_state_snapshot",
-    "build_story_status",
-    "build_turn_memory_entry",
-    "diff_runtime_state",
-    "reconcile_turn",
-]
+    diff["story_status"] = new_story_status
+    return diff

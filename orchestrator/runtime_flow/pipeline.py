@@ -109,7 +109,7 @@ def _mentions_unresolved_roll_request(text: str) -> bool:
 def _turn_has_resolved_roll(turn_ctx: Dict[str, Any]) -> bool:
     """
     True when at least one roll has already fired during this turn, either
-    through a direct skill_check call or through a tool that rolled
+    through a direct skill_check call or through a tool that rolled.
     Used to suppress the 'defer roll to narration' guard once a roll exists,
     so the model can legitimately reference the prior result in its Decision Summary
     without being blocked for using words like 'roll', 'DC', or 'check'.
@@ -150,6 +150,13 @@ _TRIVIAL_INPUT_PATTERNS = (
     re.compile(r"^\s*(thanks|thank you|ty)\s*[.!?]?\s*$", re.IGNORECASE),
     re.compile(r"^\s*(ok|okay|alright|sure|yes|no|yep|nope)\s*[.!?]?\s*$", re.IGNORECASE),
     re.compile(r"^\s*(help|menu)\s*[.!?]?\s*$", re.IGNORECASE),
+)
+
+# Regex matching any Phase 2 tool name written as text (catches "tool: X" formatting).
+_PHASE_2_TOOL_NAME_PATTERN = re.compile(
+    r"(?i)\b(tool|function)\s*:\s*"
+    r"(move_to_location|write_memory_tool|finalize_writes|move_npc"
+    r"|move_world_item|create_npc|create_item)\b"
 )
 
 
@@ -409,6 +416,10 @@ class StoryEngine:
             "manual_roll_provider": (
                 self.manual_roll_provider if self.roll_mode == "manual" else None
             ),
+            # Populated by check_can_interact, when a player-named target cannot be resolved to an existing world object.
+            "unresolved_interaction_targets": [],
+            # Tracks how many entities/items have been created this turn.
+            "creation_counts": {"entities": 0, "items": 0},
         }
         action_tool_calls: List[Dict[str, Any]] = []
         bind_turn_orchestration_ctx(self.game_state, turn_ctx)
@@ -684,7 +695,14 @@ class StoryEngine:
             if success:
                 successful_tool_calls[tool_name] = successful_tool_calls.get(tool_name, 0) + 1
 
-            if tool_name in {"move_to_location", "move_npc", "write_memory_tool"}:
+            if tool_name in {
+                "move_to_location",
+                "move_npc",
+                "write_memory_tool",
+                "move_world_item",
+                "create_npc",
+                "create_item",
+            }:
                 action_tool_calls.append({
                     "phase": "phase_two",
                     "name": tool_name,
@@ -706,7 +724,7 @@ class StoryEngine:
                     "reason": (
                         f"Tool '{tool_name}' is not available in Phase 2. "
                         "Use only move_to_location, move_npc, write_memory_tool, "
-                        "or finalize_writes."
+                        "move_world_item, create_npc, create_item, or finalize_writes."
                     ),
                 }
             # Block duplicate finalize_writes calls.
@@ -739,6 +757,21 @@ class StoryEngine:
                 return f"write_memory_tool failed: {reason}. Retry with a valid entity_name and non-empty memory."
             if tool_name == "move_npc":
                 return f"move_npc failed: {reason}. Retry with a valid npc_key and destination, or skip."
+            if tool_name == "move_world_item":
+                return (
+                    f"move_world_item failed: {reason}. "
+                    "Retry with a valid item_key, holder_kind ('location' or 'entity'), and holder_key, or skip."
+                )
+            if tool_name == "create_npc":
+                retryable = bool(payload.get("retryable", True))
+                if not retryable:
+                    return f"create_npc failed and cannot be retried: {reason}. Skip and note in writes_summary."
+                return f"create_npc failed: {reason}. Retry with a valid name, or skip if the cap was reached."
+            if tool_name == "create_item":
+                retryable = bool(payload.get("retryable", True))
+                if not retryable:
+                    return f"create_item failed and cannot be retried: {reason}. Skip and note in writes_summary."
+                return f"create_item failed: {reason}. Retry with a valid name, or skip if the cap was reached."
             return None
 
         def phase_two_response_hook(assistant_text: str, tool_calls: Sequence[Dict[str, Any]], _iteration: int) -> Optional[str]:
@@ -754,7 +787,7 @@ class StoryEngine:
             if (
                 not tool_calls
                 and turn_ctx.get("finalize_writes") is None
-                and re.search(r"(?i)\b(tool|function)\s*:\s*(move_to_location|write_memory_tool|finalize_writes|move_npc)\b", text)
+                and _PHASE_2_TOOL_NAME_PATTERN.search(text)
             ):
                 return (
                     "Detected a tool name written as text instead of called "
@@ -826,6 +859,7 @@ class StoryEngine:
             narration=narrative,
             action_results=action_tool_calls,
             world_before=world_before,
+            unresolved_targets=turn_ctx.get("unresolved_interaction_targets", []),
         )
 
         if self.adapter.verbose:
@@ -886,6 +920,9 @@ class StoryEngine:
             "narration_focus": finalize_payload.get("narration_focus", ""),
             "blocked_reason": finalize_payload.get("blocked_reason", ""),
             "writes_summary": finalize_writes_payload.get("writes_summary", ""),
+            "unresolved_interaction_targets": turn_ctx.get("unresolved_interaction_targets", []),
+            "entities_created": reconciliation.get("entities_created", []),
+            "items_created": reconciliation.get("items_created", []),
             "phase_summaries": {
                 "phase_one": finalize_payload.get("turn_summary", ""),
                 "narration": _summary_snippet(narrative),

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from .mechanics_tools import skill_check as run_skill_check
 from .story import GameState, mark_location_visited
@@ -9,7 +9,9 @@ from .tool_runtime import (
     find_route_via_visited,
     get_runtime_world_model,
     normalize_key,
+    register_entity_aliases,
     require_turn_orchestration_ctx,
+    resolve_alias,
 )
 
 
@@ -45,10 +47,20 @@ def _request_manual_history_roll(game_state: GameState, dc: int, context: str) -
     return value
 
 
-def _resolve_target_key(model, raw_key: str) -> str:
+def _resolve_target_key(model: Any, raw_key: str, game_state: Optional[GameState] = None) -> str:
     candidate = str(raw_key or "").strip()
     if not candidate:
         return ""
+
+    # Check alias registry before anything else so new objects
+    # resolve immediately without relying on fuzzy matching.
+    if game_state is not None:
+        alias_key = resolve_alias(game_state, candidate)
+        if alias_key is not None:
+            obj = model.get_object(alias_key)
+            if obj is not None:
+                return obj.key
+
     if model.get_location(candidate) is not None:
         return model.get_location(candidate).key
     if model.get_entity(candidate) is not None:
@@ -79,7 +91,31 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
         return {"success": False, "can_interact": False, "reason": "Missing game_state context."}
     model = get_runtime_world_model(game_state)
     player_loc = game_state.player_location
-    resolved_key = _resolve_target_key(model, entity_key) or player_loc
+
+    raw_target = str(entity_key or "").strip()
+    resolved_key = _resolve_target_key(model, raw_target, game_state)
+
+    # Target was specified but could not be resolved to any existing world object.
+    # Record it as an unresolved interaction target so Phase 2 can decide whether
+    # to materialize it if the narration describes a real directed interaction.
+    if raw_target and not resolved_key:
+        try:
+            ctx = require_turn_orchestration_ctx(game_state)
+            targets = ctx.setdefault("unresolved_interaction_targets", [])
+            if raw_target not in targets:
+                targets.append(raw_target)
+        except Exception:
+            pass
+        return {
+            "success": True,
+            "can_interact": False,
+            "reason": f"'{raw_target}' does not exist in the world model.",
+            "nearby": model.scene_snapshot(player_loc),
+            "unresolved_target": raw_target,
+        }
+
+    if not resolved_key:
+        resolved_key = player_loc
     if not resolved_key:
         return {
             "success": True,
@@ -181,22 +217,21 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
         }
         if manual_value is not None:
             check_kwargs["_manual_roll"] = manual_value
-        check_payload = run_skill_check(**check_kwargs)
-        check_entry = dict(check_payload.get("check") or {}) if check_payload.get("success") else {}
-        passed = bool(check_entry.get("success", False))
+        history_check = run_skill_check(**check_kwargs)  # type: ignore[arg-type]
         history_summary = {
-            "rolled": True,
-            "skill": "history",
             "dc": dc,
-            "roll": check_entry.get("roll"),
-            "modifier": check_entry.get("modifier"),
-            "total": check_entry.get("total"),
-            "passed": passed,
-            "path": list(route),
-            "intermediate_count": max(0, len(route) - 2),
+            "total": history_check.get("total"),
+            "passed": history_check.get("success"),
+            "route": list(route),
         }
-
-        if passed:
+        check_entry = next(
+            (
+                entry for entry in reversed(history_check.get("log", []))
+                if entry.get("skill") == "history"
+            ),
+            history_check,
+        )
+        if history_check.get("success"):
             roll_total = check_entry.get("total")
             return {
                 "success": True,
@@ -296,7 +331,7 @@ def move_to_location(location_key: str = "", game_state: GameState | None = None
             "new_location": game_state.player_location,
             "reason": "No destination provided. Staying at current location.",
         }
-    resolved_destination = _resolve_target_key(model, location_key)
+    resolved_destination = _resolve_target_key(model, location_key, game_state)
     if resolved_destination and model.get_location(resolved_destination) is not None:
         location_key = resolved_destination
     location = model.get_location(location_key)
@@ -424,8 +459,8 @@ def move_npc(npc_key: str = "", new_location: str = "", game_state: GameState | 
     model = get_runtime_world_model(game_state)
     if not str(npc_key or "").strip() or not str(new_location or "").strip():
         return {"success": True, "reason": "Missing npc_key or new_location. No NPC movement applied."}
-    resolved_npc = _resolve_target_key(model, npc_key)
-    resolved_location = _resolve_target_key(model, new_location)
+    resolved_npc = _resolve_target_key(model, npc_key, game_state)
+    resolved_location = _resolve_target_key(model, new_location, game_state)
     npc = model.get_entity(resolved_npc or npc_key)
     if npc is None:
         return { 
@@ -520,7 +555,9 @@ VALIDATE_TOOLS = [
                 "locations, this tool searches for a route through visited "
                 "locations and rolls a History check (DC 5 + 2 per intermediate "
                 "hop) to see if the player remembers the way. Use this before "
-                "narrating any movement or interaction."
+                "narrating any movement or interaction. If the target does not "
+                "exist in the world model, the result will include unresolved_target "
+                "so Phase 2 can create it if the narration describes a real interaction."
             ),
             "parameters": {
                 "type": "object",

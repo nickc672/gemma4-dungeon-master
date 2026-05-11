@@ -7,8 +7,22 @@ from .entity import Entity
 from .item import Item
 from .location import Location
 from .story import GameState
-from .tool_runtime import get_runtime_world_model, save_runtime_world_checkpoint
+from .tool_runtime import (
+    get_runtime_world_model,
+    normalize_key,
+    register_entity_aliases,
+    require_turn_orchestration_ctx,
+    save_runtime_world_checkpoint,
+)
 from .world_model import WORLD_MODEL_DATA_DIR, WorldModel, build_world_model
+
+
+# Per-turn caps to prevent runaway creation.
+MAX_ENTITY_CREATIONS_PER_TURN = 2
+MAX_ITEM_CREATIONS_PER_TURN = 3
+
+# Reserved entity keys that must never be overwritten at runtime.
+_PROTECTED_KEYS = {"player"}
 
 
 def _normalize_text(value: Any) -> str:
@@ -133,6 +147,36 @@ def _save_model(
     model.save(data_dir=save_dir)
     return str(save_dir)
 
+
+def _get_turn_creation_counts(game_state: GameState) -> dict[str, int]:
+    """Return the creation-count dict stored in the active turn context."""
+    try:
+        ctx = require_turn_orchestration_ctx(game_state)
+        return ctx.setdefault("creation_counts", {"entities": 0, "items": 0})
+    except Exception:
+        return {"entities": 0, "items": 0}
+
+
+def _slug(text: str) -> str:
+    """Convert a display name to a safe key slug."""
+    return _normalize_text(text).replace(" ", "_").replace("-", "_")
+
+
+def _unique_key(model: WorldModel, base: str) -> str:
+    """Return base if unused in the model, otherwise append an incrementing suffix."""
+    if not model.has_key(base):
+        return base
+    suffix = 2
+    while True:
+        candidate = f"{base}_{suffix}"
+        if not model.has_key(candidate):
+            return candidate
+        suffix += 1
+
+
+# ---------------------------------------------------------------------------
+# Read tools
+# ---------------------------------------------------------------------------
 
 def get_world_story(world_model_data_dir: str = "", game_state: GameState | None = None) -> dict[str, Any]:
     model = _load_model(world_model_data_dir, game_state=game_state)
@@ -491,6 +535,238 @@ def validate_world_model(world_model_data_dir: str = "", game_state: GameState |
     return {"success": not errors, "errors": errors}
 
 
+# ---------------------------------------------------------------------------
+# Runtime creation tools (Phase 2 only)
+# ---------------------------------------------------------------------------
+
+def create_npc(
+    name: str,
+    description: str = "",
+    location: str = "",
+    tags: list[str] | None = None,
+    aliases: list[str] | None = None,
+    memory_seeds: list[str] | None = None,
+    world_model_data_dir: str = "",
+    checkpoint_name: str = "",
+    game_state: GameState | None = None,
+) -> dict[str, Any]:
+    """
+    Create a new NPC in the world model when the player directly interacts
+    with a character that has not been registered yet.
+    """
+    if game_state is None:
+        return {"success": False, "reason": "Missing game_state context.", "retryable": False}
+
+    clean_name = str(name or "").strip()
+    if not clean_name:
+        return {"success": False, "reason": "name is required.", "retryable": False}
+
+    # Player identity protection
+    if _normalize_text(clean_name) in _PROTECTED_KEYS:
+        return {
+            "success": False,
+            "reason": "Cannot create an entity using a reserved name.",
+            "retryable": False,
+        }
+
+    model = _load_model(world_model_data_dir, game_state=game_state)
+
+    # Find before create - search the full world, not just the current scene.
+    existing_key = _resolve_entity_candidate(model, clean_name)
+    if existing_key:
+        existing = model.get_entity(existing_key)
+        # Register any new aliases on the already-existing entity so follow-up
+        # references from the player also resolve.
+        all_aliases = [clean_name] + (list(aliases) if aliases else [])
+        register_entity_aliases(game_state, existing_key, all_aliases)
+        return {
+            "success": True,
+            "created": False,
+            "key": existing_key,
+            "entity": existing.to_record() if existing else None,
+            "reason": f"Entity matching '{clean_name}' already exists as '{existing_key}'.",
+        }
+
+    # Per-turn cap
+    counts = _get_turn_creation_counts(game_state)
+    if counts["entities"] >= MAX_ENTITY_CREATIONS_PER_TURN:
+        return {
+            "success": False,
+            "reason": (
+                f"Per-turn entity creation cap ({MAX_ENTITY_CREATIONS_PER_TURN}) reached. "
+                "Cannot create more entities this turn."
+            ),
+            "retryable": False,
+        }
+
+    entity_key = _unique_key(model, _slug(clean_name))
+
+    # Resolve location - default to the player's current location.
+    resolved_location = ""
+    if location:
+        resolved_location = _resolve_location_candidate(model, location)
+    if not resolved_location:
+        resolved_location = _resolve_location_candidate(model, game_state.player_location)
+    if not resolved_location:
+        resolved_location = game_state.player_location
+    if not resolved_location:
+        resolved_location = model.starting_location
+
+    payload: dict[str, Any] = {
+        "key": entity_key,
+        "name": clean_name,
+        "entity_type": "npc",
+        "description": str(description or "").strip(),
+        "location": resolved_location,
+        "skills": {},
+        "stats": {},
+        "tags": [str(t) for t in (tags or [])],
+        "memory": [str(m) for m in (memory_seeds or [])],
+    }
+    entity = Entity.from_record(payload)
+    model.add_entity(entity)
+    model.sync_actor_inventories()
+
+    errors = model.validate()
+    if errors:
+        return {"success": False, "errors": errors, "retryable": False}
+
+    save_path = _save_model(
+        model,
+        world_model_data_dir,
+        game_state=game_state,
+        checkpoint_name=checkpoint_name,
+    )
+
+    counts["entities"] += 1
+
+    all_aliases = [clean_name] + (list(aliases) if aliases else [])
+    register_entity_aliases(game_state, entity_key, all_aliases)
+
+    return {
+        "success": True,
+        "created": True,
+        "key": entity_key,
+        "entity": entity.to_record(),
+        "save_path": save_path,
+    }
+
+
+def create_item(
+    name: str,
+    description: str = "",
+    holder_kind: str = "location",
+    holder_key: str = "",
+    portable: bool = True,
+    tags: list[str] | None = None,
+    aliases: list[str] | None = None,
+    world_model_data_dir: str = "",
+    checkpoint_name: str = "",
+    game_state: GameState | None = None,
+) -> dict[str, Any]:
+    """
+    Create a new item in the world model when the player directly interacts
+    with an object that has not been registered yet.
+    """
+    if game_state is None:
+        return {"success": False, "reason": "Missing game_state context.", "retryable": False}
+
+    clean_name = str(name or "").strip()
+    if not clean_name:
+        return {"success": False, "reason": "name is required.", "retryable": False}
+
+    model = _load_model(world_model_data_dir, game_state=game_state)
+
+    # Find before create
+    existing_key = _resolve_item_candidate(model, clean_name)
+    if existing_key:
+        existing = model.get_item(existing_key)
+        all_aliases = [clean_name] + (list(aliases) if aliases else [])
+        register_entity_aliases(game_state, existing_key, all_aliases)
+        return {
+            "success": True,
+            "created": False,
+            "key": existing_key,
+            "item": existing.to_record() if existing else None,
+            "reason": f"Item matching '{clean_name}' already exists as '{existing_key}'.",
+        }
+
+    # Per-turn cap
+    counts = _get_turn_creation_counts(game_state)
+    if counts["items"] >= MAX_ITEM_CREATIONS_PER_TURN:
+        return {
+            "success": False,
+            "reason": (
+                f"Per-turn item creation cap ({MAX_ITEM_CREATIONS_PER_TURN}) reached. "
+                "Cannot create more items this turn."
+            ),
+            "retryable": False,
+        }
+
+    item_key = _unique_key(model, _slug(clean_name))
+
+    normalized_kind = str(holder_kind or "location").strip().lower()
+    if normalized_kind not in {"location", "entity"}:
+        normalized_kind = "location"
+
+    resolved_holder_key = ""
+    if holder_key:
+        if normalized_kind == "location":
+            resolved_holder_key = _resolve_location_candidate(model, holder_key)
+        elif normalized_kind == "entity":
+            resolved_holder_key = _resolve_entity_candidate(model, holder_key)
+
+    if not resolved_holder_key:
+        normalized_kind = "location"
+        resolved_holder_key = _resolve_location_candidate(model, game_state.player_location)
+    if not resolved_holder_key:
+        resolved_holder_key = game_state.player_location
+    if not resolved_holder_key:
+        resolved_holder_key = model.starting_location
+
+    item = Item.from_record(
+        {
+            "key": item_key,
+            "name": clean_name,
+            "description": str(description or "").strip(),
+            "holder_kind": normalized_kind,
+            "holder_key": resolved_holder_key,
+            "portable": bool(portable),
+            "tags": [str(t) for t in (tags or [])],
+        }
+    )
+    model.add_item(item)
+    model.sync_actor_inventories()
+
+    errors = model.validate()
+    if errors:
+        return {"success": False, "errors": errors, "retryable": False}
+
+    save_path = _save_model(
+        model,
+        world_model_data_dir,
+        game_state=game_state,
+        checkpoint_name=checkpoint_name,
+    )
+
+    counts["items"] += 1
+
+    all_aliases = [clean_name] + (list(aliases) if aliases else [])
+    register_entity_aliases(game_state, item_key, all_aliases)
+
+    return {
+        "success": True,
+        "created": True,
+        "key": item_key,
+        "item": item.to_record(),
+        "save_path": save_path,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tool definitions
+# ---------------------------------------------------------------------------
+
 WORLD_MODEL_TOOL_DEFINITIONS = [
     {
         "type": "function",
@@ -722,13 +998,17 @@ WORLD_MODEL_TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "move_world_item",
-            "description": "Move an item to a location or actor holder in the current world model.",
+            "description": (
+                "Move an existing item to a different location or entity holder. "
+                "Use this in Phase 2 when a player picks up an item that was "
+                "already in the world model."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "item_key": {"type": "string"},
-                    "holder_kind": {"type": "string", "enum": ["location", "entity"]},
-                    "holder_key": {"type": "string"},
+                    "item_key": {"type": "string", "description": "Key of the item to move."},
+                    "holder_kind": {"type": "string", "enum": ["location", "entity"], "description": "Whether the new holder is a location or an entity."},
+                    "holder_key": {"type": "string", "description": "Key of the new holder."},
                     "world_model_data_dir": {"type": "string"},
                     "checkpoint_name": {"type": "string"},
                 },
@@ -742,6 +1022,115 @@ WORLD_MODEL_TOOL_DEFINITIONS = [
             "name": "validate_world_model",
             "description": "Validate world-model references and structure.",
             "parameters": {"type": "object", "properties": {"world_model_data_dir": {"type": "string"}}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_npc",
+            "description": (
+                "Create a new NPC in the world model when the player has directly "
+                "interacted with a character not yet registered in the system. "
+                "Uses find-or-create semantics: returns the existing key if a match "
+                "is found rather than creating a duplicate. "
+                "ONLY call this when the player explicitly addresses or acts on the "
+                "character (talk to, push, examine up-close, attack, etc.). "
+                "Do NOT call for flavor characters mentioned in narration who are "
+                "never directly engaged. Do NOT create locations."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Display name of the NPC (e.g. 'The Scarred Bartender').",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Brief description drawn from narration context.",
+                    },
+                    "location": {
+                        "type": "string",
+                        "description": "Location key where the NPC appears. Defaults to the player's current location.",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional tags such as 'bartender' or 'hostile'.",
+                    },
+                    "aliases": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "All surface forms the narrator or player used for this character "
+                            "before it was created (e.g. 'the man in the corner', 'scarred man'). "
+                            "These are registered for future input resolution."
+                        ),
+                    },
+                    "memory_seeds": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional seed memories for the NPC drawn from narration.",
+                    },
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_item",
+            "description": (
+                "Create a new item in the world model when the player has directly "
+                "interacted with an object not yet registered in the system. "
+                "Uses find-or-create semantics: returns the existing key if a match "
+                "is found rather than creating a duplicate. "
+                "ONLY call this when the player explicitly addresses or acts on the "
+                "object (examine, take, use, destroy, etc.). "
+                "Do NOT call for scene-dressing objects the player ignores. "
+                "If the player is taking the item, pass holder_kind='entity' and "
+                "holder_key='Player' to place it in the player's inventory."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Display name of the item (e.g. 'Bloodied Knife').",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Brief description from narration context.",
+                    },
+                    "holder_kind": {
+                        "type": "string",
+                        "enum": ["location", "entity"],
+                        "description": "Whether the item is at a location or held by an entity. Defaults to 'location'.",
+                    },
+                    "holder_key": {
+                        "type": "string",
+                        "description": "Key of the location or entity holding the item. Defaults to current player location.",
+                    },
+                    "portable": {
+                        "type": "boolean",
+                        "description": "Whether the item can be picked up. Defaults to true.",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "aliases": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Surface forms used for this object before creation "
+                            "(e.g. 'the painting', 'old portrait'). Registered for future resolution."
+                        ),
+                    },
+                },
+                "required": ["name"],
+            },
         },
     },
 ]
@@ -784,26 +1173,33 @@ def execute_world_model_tool(
         return move_world_item(game_state=game_state, **arguments)
     if tool_name == "validate_world_model":
         return validate_world_model(game_state=game_state, **arguments)
+    if tool_name == "create_npc":
+        return create_npc(game_state=game_state, **arguments)
+    if tool_name == "create_item":
+        return create_item(game_state=game_state, **arguments)
     return {"success": False, "reason": f"Unknown world-model tool: {tool_name}"}
 
 
 __all__ = [
+    "MAX_ENTITY_CREATIONS_PER_TURN",
+    "MAX_ITEM_CREATIONS_PER_TURN",
     "WORLD_MODEL_TOOL_DEFINITIONS",
+    "create_item",
+    "create_npc",
     "execute_world_model_tool",
-    "get_world_story",
-    "write_world_story",
-    "list_world_locations",
-    "get_world_location",
-    "upsert_world_location",
-    "connect_world_locations",
-    "get_world_scene",
-    "list_world_entities",
     "get_world_entity",
-    "upsert_world_entity",
-    "move_world_entity",
-    "list_world_items",
     "get_world_item",
-    "upsert_world_item",
+    "get_world_location",
+    "get_world_scene",
+    "get_world_story",
+    "list_world_entities",
+    "list_world_items",
+    "list_world_locations",
+    "move_world_entity",
     "move_world_item",
+    "upsert_world_entity",
+    "upsert_world_item",
+    "upsert_world_location",
     "validate_world_model",
+    "write_world_story",
 ]
