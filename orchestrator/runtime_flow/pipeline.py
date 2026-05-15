@@ -23,7 +23,7 @@ from ..llm_interaction.prompt_texts import (
     PHASE_2_SYSTEM_PROMPT,
 )
 from ..world_state.story import create_initial_game_state
-from ..world_state.tool_runtime import get_runtime_world_model
+from ..world_state.tool_runtime import find_world_object, get_runtime_world_model
 from ..world_state.world_model import WorldModel, build_world_model, resolve_world_model_data_dir
 import json
 import re
@@ -605,7 +605,7 @@ class StoryEngine:
             return None
 
         def phase_one_stop_hook(assistant_text: str, already_fired: bool) -> Optional[str]:
-            _ = assistant_text, already_fired
+            _ = assistant_text
             if turn_ctx.get("finalize") is None:
                 return (
                     "The phase is not finished. Call `finalize_turn` now "
@@ -617,7 +617,123 @@ class StoryEngine:
                     "blocked_reason instead of leaving it empty. Do not "
                     "call any other tools first."
                 )
-            return None
+
+            if already_fired:
+                return None
+
+            finalize_payload_local = turn_ctx.get("finalize") or {}
+            turn_summary_text = str(finalize_payload_local.get("turn_summary") or "")
+            narration_focus_text = str(finalize_payload_local.get("narration_focus") or "")
+            search_text = " ".join([
+                str(player_input or ""),
+                turn_summary_text,
+                narration_focus_text,
+            ]).lower()
+
+            retrieved_keys: set[str] = set()
+            for call in turn_ctx["all_world_tool_calls"]:
+                if call.get("phase") != "phase_one":
+                    continue
+                if call.get("name") != "retrieve_memory_tool":
+                    continue
+                if not _tool_call_succeeded(call):
+                    continue
+                args = call.get("arguments") or {}
+                name = str(args.get("entity_name") or "").strip()
+                if not name:
+                    continue
+                obj = find_world_object(name, self.game_state)
+                if obj is not None:
+                    retrieved_keys.add(obj.key)
+
+            missing_npcs: list[str] = []
+            missing_locations: list[str] = []
+
+            # NPCs in the current scene whose name appears in the player's
+            # input or in the finalize payload, that have memories on file
+            # and were not retrieved against this phase.
+            for actor_name in state.scene_actors or []:
+                name_str = str(actor_name or "").strip()
+                if not name_str:
+                    continue
+                if name_str.lower() not in search_text:
+                    continue
+                npc = find_world_object(name_str, self.game_state)
+                if npc is None:
+                    continue
+                if getattr(npc, "entity_type", "") != "npc":
+                    continue
+                if getattr(npc, "memory_count", 0) <= 0:
+                    continue
+                if npc.key in retrieved_keys:
+                    continue
+                if npc.name not in missing_npcs:
+                    missing_npcs.append(npc.name)
+
+            # Locations the player is moving to (verified by check_can_interact)
+            # that have memories on file and were not retrieved against.
+            if _is_movement_request(player_input):
+                current_loc_key = str(self.game_state.player_location or "").strip()
+                for call in turn_ctx["all_world_tool_calls"]:
+                    if call.get("phase") != "phase_one":
+                        continue
+                    if call.get("name") != "check_can_interact":
+                        continue
+                    if not _tool_call_succeeded(call):
+                        continue
+                    result = call.get("result") or {}
+                    if not result.get("can_interact"):
+                        continue
+                    if str(result.get("entity_type") or "").lower() != "location":
+                        continue
+                    args = call.get("arguments") or {}
+                    target = str(args.get("entity_key") or "").strip()
+                    if not target:
+                        continue
+                    loc = find_world_object(target, self.game_state)
+                    if loc is None:
+                        continue
+                    if getattr(loc, "entity_type", "") != "location":
+                        continue
+                    if loc.key == current_loc_key:
+                        continue
+                    if getattr(loc, "memory_count", 0) <= 0:
+                        continue
+                    if loc.key in retrieved_keys:
+                        continue
+                    if loc.name not in missing_locations:
+                        missing_locations.append(loc.name)
+
+            if not missing_npcs and not missing_locations:
+                return None
+
+            nudge_lines: list[str] = [
+                "Soft reminder: relevant stored memory was not retrieved this "
+                "turn. Consider calling `retrieve_memory_tool` before "
+                "finalizing so the narrator can voice NPCs and describe "
+                "locations with continuity. Phase 2 does not retrieve memory; "
+                "if it is not surfaced here it will not reach the narration."
+            ]
+            if missing_npcs:
+                npc_list = ", ".join(missing_npcs)
+                nudge_lines.append(
+                    "- NPC(s) the player addressed who have stored memories: "
+                    f"{npc_list}"
+                )
+            if missing_locations:
+                loc_list = ", ".join(missing_locations)
+                nudge_lines.append(
+                    "- Location(s) the player is moving to that have stored "
+                    f"memories: {loc_list}"
+                )
+            nudge_lines.append(
+                "If you call retrieve_memory_tool, re-issue finalize_turn "
+                "afterward. If you choose to proceed without retrieving, "
+                "re-issue finalize_turn unchanged and the turn will continue."
+            )
+
+            turn_ctx["finalize"] = None
+            return "\n".join(nudge_lines)
 
         turn_ctx["phase"] = "phase_one"
         phase_one_prompt = build_agent_prompt(state)
@@ -839,6 +955,54 @@ class StoryEngine:
                     "also write a memory from that NPC's perspective. Then re-call "
                     "finalize_writes."
                 )
+
+            # Location memory enforcement: if move_to_location succeeded this turn,
+            # the destination location should also receive a memory write.
+            successful_move_destinations: list[str] = []
+            for call in turn_ctx["all_world_tool_calls"]:
+                if call.get("phase") != "phase_two":
+                    continue
+                if call.get("name") != "move_to_location":
+                    continue
+                if not _tool_call_succeeded(call):
+                    continue
+                result = call.get("result") or {}
+                destination = str(result.get("new_location") or "").strip()
+                if destination:
+                    successful_move_destinations.append(destination)
+
+            if successful_move_destinations:
+                location_memory_targets: set[str] = set()
+                for call in turn_ctx["all_world_tool_calls"]:
+                    if call.get("phase") != "phase_two":
+                        continue
+                    if call.get("name") != "write_memory_tool":
+                        continue
+                    if not _tool_call_succeeded(call):
+                        continue
+                    args = call.get("arguments") or {}
+                    name = str(args.get("entity_name") or "").strip()
+                    if not name:
+                        continue
+                    obj = find_world_object(name, self.game_state)
+                    if obj is None:
+                        continue
+                    if getattr(obj, "entity_type", "") == "location":
+                        location_memory_targets.add(obj.key)
+
+                missing_location_memories = [
+                    dest for dest in successful_move_destinations
+                    if dest not in location_memory_targets
+                ]
+                if missing_location_memories:
+                    dest_list = ", ".join(missing_location_memories)
+                    issues.append(
+                        "Player arrived at a new location but no memory was written "
+                        "on that location. Call `write_memory_tool` with "
+                        f"entity_name set to the destination ({dest_list}) and a "
+                        "brief third-person memory describing the arrival from the "
+                        "location's perspective. Then re-call finalize_writes."
+                    )
 
             if issues:
                 turn_ctx["finalize_writes"] = None
