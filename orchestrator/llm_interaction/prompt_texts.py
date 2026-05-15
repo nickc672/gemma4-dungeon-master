@@ -197,7 +197,9 @@ Finalize:
 
 MATERIALIZATION RULES:
 
-The world becomes real through interaction. Background characters and untouched objects do NOT get registered. Use the Unresolved Interaction Targets list and the narration to decide.
+The world becomes real through interaction. Background characters and untouched objects do NOT get registered. Use the Unresolved Interaction Targets list, the Current Location Memory (scene roster), and the narration to decide.
+Before deciding to create_npc or create_item, scan the Current Location Memory section. If a sentence there already describes the same character or item the player is engaging with (for example, the location memory says "a man with a scar watches from the corner" and the player is now talking to that man), you must still call create_npc / create_item, but pass the original descriptive phrase in the aliases list. The system uses find-or-create semantics: it will detect an existing entity through the alias registry and reuse its key rather than duplicating, and it will rewrite the matching location memory sentence to embed the new canonical key (e.g. "a man with a scar (now known as Scar Face, key: scar_face) watches from the corner").
+If a Current Location Memory line already contains "now known as <Name>, key: <key>", that descriptor is already linked to an existing entity. Use that entity's key directly; do NOT call create_npc / create_item for it.
 
 Call create_npc when:
 - The player spoke to, threatened, examined, pushed, attacked, or directly addressed a character.
@@ -216,7 +218,7 @@ Do NOT call create_item when:
 - The object appeared in description but was not touched.
 - The object is structural (walls, doors, the building itself).
 
-Aliases: pass every surface form used in narration and player input (e.g. "the man in the corner", "scarred stranger"). These feed the input resolver.
+Aliases: pass every surface form used in narration, player input, and the Current Location Memory section (e.g. "the man in the corner", "scarred stranger"). These feed the input resolver and the location-memory linker.
 
 LOCATION MEMORY RULES:
 
@@ -228,6 +230,8 @@ Do NOT write a location memory for:
 - Pure observation turns that changed nothing.
 - Trivial transit with no event.
 
+When you write a location memory that references a materialized world object, prefer using its display name so future readers can follow up by its canonical key (which the system has linked into prior sentences automatically).
+
 Use the location's name as entity_name. Phrase in third person, not first person ("A stranger arrived from the north" not "I arrived from the north").
 
 RULES:
@@ -238,6 +242,32 @@ RULES:
 
 RESPONSE FORMAT:
 Every response begins with `Decision Summary: <one line>`.
+
+EXAMPLE - Player talks to a character previously described in location memory:
+
+Player Request: I walk over to the man with the scar.
+Current Location Memory (scene roster):
+- A stranger arrived from the road. Travelers were drinking by the fire.
+- A man with a scar watches from the corner, nursing a half-empty mug.
+Narration: You cross the room. The scarred man does not move as you approach; his eyes track you over the rim of his mug. "Lost?" he asks, voice dry.
+
+Response 1:
+Decision Summary: Player engaged the scarred man described in the location memory; registering him with aliases that match the original descriptor.
+[calls create_npc with {"name": "The Scarred Stranger", "description": "Watchful man with a scar, nursing a half-empty mug. Speaks dryly.", "aliases": ["a man with a scar", "the man with the scar", "the scarred man", "scarred man"]}]
+
+(The system will rewrite the matching location memory line to "A man with a scar (now known as The Scarred Stranger, key: the_scarred_stranger) watches from the corner, nursing a half-empty mug." and append "The player engaged with what was previously described as 'a man with a scar'; now known as The Scarred Stranger (the_scarred_stranger).")
+
+Response 2:
+Decision Summary: Writing Player memory.
+[calls write_memory_tool with {"entity_name": "Player", "memory": "I approached the scarred stranger in the corner. He asked if I was lost, watching me carefully."}]
+
+Response 3:
+Decision Summary: Writing Scarred Stranger memory.
+[calls write_memory_tool with {"entity_name": "The Scarred Stranger", "memory": "A newcomer approached me at the corner table. I asked if they were lost and watched their reaction."}]
+
+Response 4:
+Decision Summary: Done.
+[calls finalize_writes with {"writes_summary": "Created The Scarred Stranger from the location memory descriptor; wrote Player and Scarred Stranger memories."}]
 
 EXAMPLE - Player talks to an unnamed barkeep (not yet in world model):
 

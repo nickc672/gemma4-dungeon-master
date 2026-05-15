@@ -482,9 +482,60 @@ def move_npc(npc_key: str = "", new_location: str = "", game_state: GameState | 
             "retryable": False,
         }
 
+    # Capture the source location before the move so we can write a departure memory on it.
+    source_location_key = str(getattr(npc, "location", "") or "").strip()
+    source_location = (
+        model.get_location(source_location_key) if source_location_key else None
+    )
+
+    # No-op if the NPC is already at the destination.
+    if source_location is not None and source_location.key == location.key:
+        return {
+            "success": True,
+            "reason": f"{npc.key} is already at {location.key}; no movement applied.",
+        }
+
     model.move_entity(npc.key, location.key)
     game_state.npc_locations[npc.key] = location.key
-    return {"success": True, "reason": f"{npc.key} moved to {location.key}."}
+
+    # Auto-write departure and arrival memories so location memory carries
+    # the narrative thread of NPC movement. Both lines embed "key: <npc_key>"
+    # so the location-memory linker recognises them as already linked and
+    # never tries to wrap the canonical name with a duplicate marker.
+    memory_writes: dict[str, str] = {}
+    npc_name = str(getattr(npc, "name", "") or npc.key).strip() or npc.key
+    npc_marker = f"key: {npc.key}"
+
+    if source_location is not None and source_location.key != location.key:
+        destination_label = str(location.name or location.key).strip() or location.key
+        departure_line = (
+            f"{npc_name} ({npc_marker}) left toward {destination_label}."
+        )
+        if departure_line not in source_location.memory.sentences:
+            source_location.memory.add_memory(departure_line)
+            memory_writes[source_location.key] = departure_line
+
+    origin_label = ""
+    if source_location is not None:
+        origin_label = str(source_location.name or source_location.key).strip() or source_location.key
+
+    if origin_label:
+        arrival_line = (
+            f"{npc_name} ({npc_marker}) arrived from {origin_label}."
+        )
+    else:
+        # NPC had no prior location (just created, or unknown origin).
+        arrival_line = f"{npc_name} ({npc_marker}) appeared here."
+
+    if arrival_line not in location.memory.sentences:
+        location.memory.add_memory(arrival_line)
+        memory_writes[location.key] = arrival_line
+
+    return {
+        "success": True,
+        "reason": f"{npc.key} moved to {location.key}.",
+        "memory_writes": memory_writes,
+    }
 
 
 def list_scene_entities(game_state: GameState) -> dict[str, object]:

@@ -351,6 +351,14 @@ class StoryEngine:
                 info["holder"] = item.holder_key
             entity_info[item.key] = apply_relevant_flags(item.key, info)
 
+        location_memory_lines: list[str] = []
+        if location is not None:
+            location_memory_lines = [
+                str(line).strip()
+                for line in list(location.memory.sentences)
+                if str(line).strip()
+            ]
+
         return PromptState(
             history_text=self.history.as_text(limit=6),
             beat_current=self.beats.progress_text(),
@@ -367,6 +375,7 @@ class StoryEngine:
             entity_info=entity_info,
             visited_locations=sorted(self.game_state.visited_locations),
             discovered_locations=sorted(self.game_state.discovered_locations),
+            location_memory=location_memory_lines,
         )
 
     # -----------------------
@@ -1144,6 +1153,15 @@ class StoryEngine:
     def generate_intro(self):
         intro_scene = self.world.scene_snapshot(self.game_state.player_location)
 
+        intro_location = self.world.get_location(self.game_state.player_location)
+        intro_location_memory: list[str] = []
+        if intro_location is not None:
+            intro_location_memory = [
+                str(line).strip()
+                for line in list(intro_location.memory.sentences)
+                if str(line).strip()
+            ]
+
         state = PromptState(
             history_text=self.history.as_text(limit=4),
             beat_current=self.beats.progress_text(),
@@ -1162,6 +1180,7 @@ class StoryEngine:
             ],
             scene_items=list(intro_scene.get("items_here", [])),
             entity_info={},
+            location_memory=intro_location_memory,
         )
 
         prompt = build_intro_prompt(state)

@@ -24,6 +24,7 @@ class PromptState:
     entity_info: Dict[str, Dict[str, str]] = field(default_factory=dict)
     visited_locations: List[str] = field(default_factory=list)
     discovered_locations: List[str] = field(default_factory=list)
+    location_memory: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -53,6 +54,7 @@ class PromptConfig:
     p2_action_results        - Phase 1 tool results (rolls, checks)
     p2_player_location_before - where the player was before this turn
     p2_unresolved_targets    - targets Phase 1 could not resolve in check_can_interact
+    p2_location_memory       - prior memory sentences stored on the current location (the "scene roster" of pre-described characters / items)
     """
 
     # Phase 1
@@ -77,6 +79,7 @@ class PromptConfig:
     p2_action_results: bool = True
     p2_player_location_before: bool = True
     p2_unresolved_targets: bool = True
+    p2_location_memory: bool = True
 
 
 DEFAULT_PROMPT_CONFIG = PromptConfig()
@@ -370,6 +373,43 @@ def build_phase_two_prompt(
             sections.append(
                 "# Unresolved Interaction Targets\n"
                 "None. All targets referenced in Phase 1 resolved to existing world objects."
+            )
+
+    # The current location's accumulated memory. This is the "scene roster":
+    # any character or item described here but not yet materialized lives in
+    # these sentences. If the narration shows the player directly engaging
+    # with one of these descriptors, call create_npc / create_item and pass
+    # the original descriptive phrase as an alias; the system will auto-link
+    # the existing sentence to the new canonical key.
+    if cfg.p2_location_memory:
+        memory_lines = [
+            str(line).strip()
+            for line in (state.location_memory or [])
+            if str(line).strip()
+        ]
+        # Cap to the most recent entries to avoid prompt bloat. Older
+        # descriptors are rarely the source of a fresh interaction.
+        memory_lines = memory_lines[-15:]
+        if memory_lines:
+            body = "\n".join(f"- {line}" for line in memory_lines)
+            sections.append(
+                "# Current Location Memory (scene roster)\n"
+                "These are the sentences already recorded on the player's "
+                "current location. Lines that contain a phrase like 'now "
+                "known as <Name>, key: <key>' already point to a materialized "
+                "world object - reuse that key, do not create a duplicate. "
+                "Lines without such a marker may describe characters or items "
+                "that have not been materialized yet; if the narration shows "
+                "the player directly engaging with one of them, call "
+                "create_npc / create_item and pass the original descriptive "
+                "phrase in the aliases list. The system will rewrite the "
+                "matching sentence to embed the new canonical key.\n"
+                f"{body}"
+            )
+        else:
+            sections.append(
+                "# Current Location Memory (scene roster)\n"
+                "No prior memory recorded on this location."
             )
 
     if cfg.p2_player_location_before:
