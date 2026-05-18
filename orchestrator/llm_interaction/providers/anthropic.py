@@ -10,23 +10,6 @@ from .base import LLMResponse, ToolCall
 logger = logging.getLogger(__name__)
 
 
-def _get_client(api_key: str | None = None) -> Any:
-    try:
-        import anthropic
-    except ImportError as exc:
-        raise ImportError(
-            "The 'anthropic' package is required to use the Anthropic provider. "
-            "Install it with: pip install anthropic"
-        ) from exc
-    resolved_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-    if not resolved_key:
-        raise ValueError(
-            "Anthropic API key not found. Set the ANTHROPIC_API_KEY environment variable "
-            "or pass api_key in the provider config."
-        )
-    return anthropic.Anthropic(api_key=resolved_key)
-
-
 class AnthropicProvider:
     """
     LLM provider backed by the Anthropic API.
@@ -34,10 +17,34 @@ class AnthropicProvider:
     Translates the canonical message format into Anthropic's content-block
     format. Supports Claude's extended thinking when 'thinking' is present
     in options (e.g. options={"thinking": {"type": "enabled", "budget_tokens": 5000}}).
+
+    The Anthropic client is cached per-instance and keyed by the API key it
+    was constructed with, so swapping the API key (e.g. via the Streamlit
+    sidebar) rebuilds the client on the next chat() call.
     """
 
     def __init__(self, *, api_key: str | None = None) -> None:
-        self._api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        self._api_key = (api_key or os.environ.get("ANTHROPIC_API_KEY", "")).strip()
+        self._client: Any = None
+        self._client_key: str = ""
+
+    def _get_client(self) -> Any:
+        try:
+            import anthropic
+        except ImportError as exc:
+            raise ImportError(
+                "The 'anthropic' package is required to use the Anthropic provider. "
+                "Install it with: pip install anthropic"
+            ) from exc
+        if not self._api_key:
+            raise ValueError(
+                "Anthropic API key not found. Provide it via the Streamlit sidebar, "
+                "set ANTHROPIC_API_KEY, or pass api_key in the provider config."
+            )
+        if self._client is None or self._client_key != self._api_key:
+            self._client = anthropic.Anthropic(api_key=self._api_key)
+            self._client_key = self._api_key
+        return self._client
 
     def chat(
         self,
@@ -47,7 +54,7 @@ class AnthropicProvider:
         tools: list[dict[str, Any]] | None = None,
         options: dict[str, Any] | None = None,
     ) -> LLMResponse:
-        client = _get_client(self._api_key)
+        client = self._get_client()
         opts = options or {}
 
         # Anthropic requires system prompt as a top-level param, not a message.

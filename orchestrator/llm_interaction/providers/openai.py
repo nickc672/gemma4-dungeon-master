@@ -9,38 +9,40 @@ from .base import LLMResponse, ToolCall
 
 logger = logging.getLogger(__name__)
 
-# Lazily imported so the package doesn't hard-fail if openai isn't installed.
-_openai_client: Any = None
-
-
-def _get_client(api_key: str | None = None) -> Any:
-    global _openai_client
-    try:
-        import openai
-    except ImportError as exc:
-        raise ImportError(
-            "The 'openai' package is required to use the OpenAI provider. "
-            "Install it with: pip install openai"
-        ) from exc
-    resolved_key = api_key or os.environ.get("OPENAI_API_KEY", "")
-    if not resolved_key:
-        raise ValueError(
-            "OpenAI API key not found. Set the OPENAI_API_KEY environment variable "
-            "or pass api_key in the provider config."
-        )
-    if _openai_client is None:
-        _openai_client = openai.OpenAI(api_key=resolved_key)
-    return _openai_client
-
 
 class OpenAIProvider:
     """
     LLM provider backed by the OpenAI API.
     Translates the canonical message format to OpenAI's native format.
+
+    The OpenAI client is cached per-instance and keyed by the API key it was
+    constructed with, so swapping the API key (e.g. via the Streamlit sidebar)
+    rebuilds the client on the next chat() call instead of silently using a
+    stale one.
     """
 
     def __init__(self, *, api_key: str | None = None) -> None:
-        self._api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        self._api_key = (api_key or os.environ.get("OPENAI_API_KEY", "")).strip()
+        self._client: Any = None
+        self._client_key: str = ""
+
+    def _get_client(self) -> Any:
+        try:
+            import openai
+        except ImportError as exc:
+            raise ImportError(
+                "The 'openai' package is required to use the OpenAI provider. "
+                "Install it with: pip install openai"
+            ) from exc
+        if not self._api_key:
+            raise ValueError(
+                "OpenAI API key not found. Provide it via the Streamlit sidebar, "
+                "set OPENAI_API_KEY, or pass api_key in the provider config."
+            )
+        if self._client is None or self._client_key != self._api_key:
+            self._client = openai.OpenAI(api_key=self._api_key)
+            self._client_key = self._api_key
+        return self._client
 
     def chat(
         self,
@@ -50,7 +52,7 @@ class OpenAIProvider:
         tools: list[dict[str, Any]] | None = None,
         options: dict[str, Any] | None = None,
     ) -> LLMResponse:
-        client = _get_client(self._api_key)
+        client = self._get_client()
         native_messages = [_to_openai_message(m) for m in messages]
         opts = options or {}
 
