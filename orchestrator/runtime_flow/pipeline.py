@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Any, Dict, Sequence, Optional, List, Callable
 from .conversation_log import History
 from ..llm_interaction.adapter import LLMAdapter
@@ -10,7 +11,10 @@ from ..app_config import (
 )
 from .reconciliation import build_runtime_state_snapshot, reconcile_turn
 from .session_state import BeatTracker, SessionSummary, SnapshotBuilder
+from .state_builder import PromptStateBuilder, build_trace_state_snapshot
 from .step_registry import build_steps
+from .turn_context import TurnContext
+from .turn_heuristics import _summary_snippet
 from ..llm_interaction.prompt_builders import (
     PromptState,
     build_agent_prompt,
@@ -39,150 +43,26 @@ from ..world_state.tools import (
     execute_tool as execute_world_tool,
 )
 
-
-def _extract_labeled_line(text: str, label: str) -> str:
-    pattern = re.compile(rf"(?im)^\s*{re.escape(label)}\s*:\s*(.+?)\s*$")
-    match = pattern.search(text or "")
-    return match.group(1).strip() if match else ""
-
-
-def _extract_labeled_block(text: str, label: str) -> str:
-    pattern = re.compile(
-        rf"(?ims)^\s*{re.escape(label)}\s*:\s*(.*?)(?=^\s*[A-Za-z][A-Za-z _-]*\s*:|\Z)"
-    )
-    match = pattern.search(text or "")
-    return match.group(1).strip() if match else ""
-
-
-def _extract_bullet_items(text: str, label: str) -> list[str]:
-    block = _extract_labeled_block(text, label)
-    items: list[str] = []
-    for line in block.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith(("- ", "* ")):
-            items.append(stripped[2:].strip())
-            continue
-        numbered = re.match(r"^\d+\.\s+(.*)$", stripped)
-        if numbered:
-            items.append(numbered.group(1).strip())
-    return [item for item in items if item]
-
-
-def _todo_specs_from_lines(lines: list[str]) -> list[dict[str, Any]]:
-    return [{"task": line, "requires_tool": False} for line in lines if str(line).strip()]
-
-
-def _summary_snippet(text: str, limit: int = 220) -> str:
-    cleaned = " ".join(str(text or "").split()).strip()
-    if not cleaned:
-        return ""
-    for sep in (". ", "! ", "? "):
-        idx = cleaned.find(sep)
-        if 0 < idx < limit:
-            return cleaned[: idx + 1]
-    if len(cleaned) <= limit:
-        return cleaned
-    return cleaned[:limit].rstrip() + "..."
-
-
-def _mentions_unresolved_roll_request(text: str) -> bool:
-    cleaned = " ".join(str(text or "").lower().split())
-    if not cleaned:
-        return False
-    markers = (
-        "roll",
-        "skill check",
-        "make a check",
-        "passive perception",
-        "dc ",
-        "investigation check",
-        "perception check",
-        "stealth check",
-        "persuasion check",
-        "athletics check",
-    )
-    return any(marker in cleaned for marker in markers)
-
-
-def _turn_has_resolved_roll(turn_ctx: Dict[str, Any]) -> bool:
-    """
-    True when at least one roll has already fired during this turn, either
-    through a direct skill_check call or through a tool that rolled.
-    Used to suppress the 'defer roll to narration' guard once a roll exists,
-    so the model can legitimately reference the prior result in its Decision Summary
-    without being blocked for using words like 'roll', 'DC', or 'check'.
-    """
-    for call in turn_ctx.get("all_world_tool_calls", []) or []:
-        name = str(call.get("name") or "").strip()
-        result = call.get("result") or {}
-        if name == "skill_check" and (result.get("ok") or result.get("success")):
-            return True
-        if name == "check_can_interact":
-            history = result.get("history_check") or {}
-            if history.get("rolled"):
-                return True
-    return False
-
-
-# Keywords that signal player movement intent.
-_MOVEMENT_PHRASES = frozenset([
-    "go to", "move to", "walk to", "run to", "travel to", "head to",
-    "proceed to", "go back", "return to", "head back", "sneak to",
-    "creep to", "rush to", "climb to", "go inside", "go outside",
-    "enter the", "leave the", "exit the", "go through", "cross to",
-    "explore", "visit",
-])
-
-# Keywords that signal significant NPC interaction in a turn summary.
-_INTERACTION_WORDS = frozenset([
-    "spoke", "talked", "asked", "told", "said", "replied", "mentioned",
-    "learned", "revealed", "confessed", "heard", "questioned", "confronted",
-    "greeted", "warned", "threatened", "persuaded", "deceived", "admitted",
-    "showed", "gave", "traded", "accused", "denied", "discovered",
-    "found", "noticed", "examined", "inspected", "investigated",
-])
-
-# Trivial player inputs that do not require a memory write.
-_TRIVIAL_INPUT_PATTERNS = (
-    re.compile(r"^\s*(hi|hello|hey|yo|sup|hiya)\s*[.!?]?\s*$", re.IGNORECASE),
-    re.compile(r"^\s*(thanks|thank you|ty)\s*[.!?]?\s*$", re.IGNORECASE),
-    re.compile(r"^\s*(ok|okay|alright|sure|yes|no|yep|nope)\s*[.!?]?\s*$", re.IGNORECASE),
-    re.compile(r"^\s*(help|menu)\s*[.!?]?\s*$", re.IGNORECASE),
-)
-
-# Regex matching any Phase 2 tool name written as text (catches "tool: X" formatting).
-_PHASE_2_TOOL_NAME_PATTERN = re.compile(
-    r"(?i)\b(tool|function)\s*:\s*"
-    r"(move_to_location|write_memory_tool|finalize_writes|move_npc"
-    r"|move_world_item|create_npc|create_item)\b"
+from .phases import (
+    Phase1Runner,
+    PhaseOneInput,
+    NarrationRunner,
+    NarrationInput,
+    Phase2Runner,
+    PhaseTwoInput,
 )
 
 
-def _is_movement_request(text: str) -> bool:
-    lowered = " ".join(str(text or "").lower().split())
-    return any(phrase in lowered for phrase in _MOVEMENT_PHRASES)
-
-
-def _summary_has_interaction(summary: str) -> bool:
-    lowered = " ".join(str(summary or "").lower().split())
-    return any(word in lowered for word in _INTERACTION_WORDS)
-
-
-def _is_trivial_player_input(text: str) -> bool:
-    cleaned = str(text or "").strip()
-    if not cleaned:
-        return True
-    return any(pattern.match(cleaned) for pattern in _TRIVIAL_INPUT_PATTERNS)
-
-
-def _tool_call_succeeded(call: Dict[str, Any]) -> bool:
-    result = call.get("result") or {}
-    if "ok" in result:
-        return bool(result.get("ok"))
-    return bool(result.get("success", False))
-
+"""
+Turn flow:
+    1. Build PromptState and capture world_before snapshot.
+    2. Create a fresh TurnContext and bind it to game_state.
+    3. Phase 1 -> read + mechanics tool loop, ends with finalize_turn.
+    4. Narration -> single LLM step against pre-write world state.
+    5. Phase 2 -> writer tool loop, ends with finalize_writes.
+    6. Reconciliation -> diff world_before / world_after, derive flags.
+    7. Commit -> append to history, advance turn index, return result dict.
+"""
 
 class StoryEngine:
 
@@ -267,889 +147,217 @@ class StoryEngine:
 
         self.steps = build_steps()
         self.snapshot_builder = SnapshotBuilder()
+        self.state_builder = PromptStateBuilder()
 
     # -----------------------
-
-    def _make_state(self, player_input):
-        def apply_relevant_flags(key: str, info: Dict[str, str]) -> Dict[str, str]:
-            relevant_flags = {
-                flag: val
-                for flag, val in self.game_state.quest_flags.items()
-                if key.lower().replace(" ", "_") in flag.lower()
-            }
-            if relevant_flags:
-                info["flags"] = ", ".join(
-                    f"{name}={'yes' if value else 'no'}" for name, value in relevant_flags.items()
-                )
-            return info
-
-        current_location = self.game_state.player_location
-        scene = self.world.scene_snapshot(current_location)
-        scene_actors = [
-            key
-            for key in scene.get("actors_here", [])
-            if str(key).strip() and str(key).strip().lower() != "player"
-        ]
-        scene_items = [str(key).strip() for key in scene.get("items_here", []) if str(key).strip()]
-        connected_locations = [str(key).strip() for key in scene.get("connections", []) if str(key).strip()]
-
-        entity_info: dict[str, dict[str, str]] = {}
-
-        location = self.world.get_location(current_location)
-        if location is not None:
-            entity_info[location.key] = apply_relevant_flags(location.key, {
-                "node_type": location.type,
-                "connections": ", ".join(location.connections) if location.connections else "none",
-                "location": location.key,
-                "visited": "yes" if location.key in self.game_state.visited_locations else "no",
-                "discovered": "yes" if location.key in self.game_state.discovered_locations else "no",
-            })
-
-        for key in connected_locations:
-            adjacent = self.world.get_location(key)
-            if adjacent is None:
-                continue
-            entity_info[adjacent.key] = apply_relevant_flags(adjacent.key, {
-                "node_type": adjacent.type,
-                "connections": ", ".join(adjacent.connections) if adjacent.connections else "none",
-                "location": adjacent.key,
-                "visited": "yes" if adjacent.key in self.game_state.visited_locations else "no",
-                "discovered": "yes" if adjacent.key in self.game_state.discovered_locations else "no",
-            })
-
-        player = self.world.get_entity("Player")
-        if player is not None:
-            player_info = {
-                "node_type": player.entity_type,
-                "location": player.location,
-            }
-            if player.inventory:
-                player_info["inventory"] = ", ".join(player.inventory)
-            entity_info[player.key] = apply_relevant_flags(player.key, player_info)
-
-        for key in scene_actors:
-            entity = self.world.get_entity(key)
-            if entity is None:
-                continue
-            info = {
-                "node_type": entity.entity_type,
-                "location": entity.location,
-            }
-            if entity.inventory:
-                info["inventory"] = ", ".join(entity.inventory)
-            entity_info[entity.key] = apply_relevant_flags(entity.key, info)
-
-        for key in scene_items:
-            item = self.world.get_item(key)
-            if item is None:
-                continue
-            info = {
-                "node_type": item.type,
-                "location": self.world.location_for_key(item.key) or item.holder_key,
-            }
-            if item.holder_kind == "entity":
-                info["holder"] = item.holder_key
-            entity_info[item.key] = apply_relevant_flags(item.key, info)
-
-        location_memory_lines: list[str] = []
-        if location is not None:
-            location_memory_lines = [
-                str(line).strip()
-                for line in list(location.memory.sentences)
-                if str(line).strip()
-            ]
-
-        return PromptState(
-            history_text=self.history.as_text(limit=6),
-            beat_current=self.beats.progress_text(),
-            beat_next=self.beats.next() or "None",
-            beat_guide=", ".join(self.beats.beats),
-            story_status=self.story_status,
-            session_summary=self.summary.text(),
-            player_input=player_input,
-            current_location=current_location,
-            scene_description=str(scene.get("description") or "Unknown location"),
-            connected_locations=connected_locations,
-            scene_actors=scene_actors,
-            scene_items=scene_items,
-            entity_info=entity_info,
-            visited_locations=sorted(self.game_state.visited_locations),
-            discovered_locations=sorted(self.game_state.discovered_locations),
-            location_memory=location_memory_lines,
+    # Phase runners
+    # -----------------------
+        self.phase_one = Phase1Runner(
+            adapter=self.adapter,
+            execute_world_tool=execute_world_tool,
+            find_world_object=find_world_object,
+            tool_defs=PHASE_1_TOOL_DEFINITIONS,
+            tool_names=PHASE_1_TOOL_NAMES,
+            finalize_tool_def=FINALIZE_TURN_TOOL_DEFINITION,
+            system_prompt=PHASE_1_SYSTEM_PROMPT,
+            prompt_builder=build_agent_prompt,
+        )
+        self.narration = NarrationRunner(
+            adapter=self.adapter,
+            narrate_step=self.steps["narrate"],
+            prompt_builder=build_narrate_prompt,
+        )
+        self.phase_two = Phase2Runner(
+            adapter=self.adapter,
+            execute_world_tool=execute_world_tool,
+            find_world_object=find_world_object,
+            tool_defs=PHASE_2_TOOL_DEFINITIONS,
+            tool_names=PHASE_2_TOOL_NAMES,
+            finalize_tool_def=FINALIZE_WRITES_TOOL_DEFINITION,
+            system_prompt=PHASE_2_SYSTEM_PROMPT,
+            prompt_builder=build_phase_two_prompt,
         )
 
     # -----------------------
+    # builds the prompt state from current engine state.
+    # -----------------------
+    def _make_state(self, player_input: str) -> PromptState:
+        return self.state_builder.build(self, player_input)
 
-    def run_turn(self, player_input: str):
-
+    # =====================================================
+    # Turn orchestration
+    # =====================================================
+    def run_turn(self, player_input: str) -> Dict[str, Any]:
         trace: dict[str, Any] = {}
 
         state = self._make_state(player_input)
         world_before = build_runtime_state_snapshot(self)
 
-        def build_state_snapshot():
-            scene = self.world.scene_snapshot(self.game_state.player_location)
-            return {
-                "beat_current": state.beat_current,
-                "beat_next": state.beat_next,
-                "beat_guide": state.beat_guide,
-                "scene": {
-                    "current_location": state.current_location,
-                    "description": state.scene_description,
-                    "connections": list(scene.get("connections", [])),
-                    "actors_here": list(scene.get("actors_here", [])),
-                    "items_here": list(scene.get("items_here", [])),
-                    "status": state.story_status,
-                    "session_summary": state.session_summary,
-                },
-            }
-
         trace["PROMPT_STATE_BEFORE"] = json.loads(json.dumps(vars(state), ensure_ascii=True))
-        trace["STATE_BEFORE"] = build_state_snapshot()
+        trace["STATE_BEFORE"] = build_trace_state_snapshot(self, state)
 
-        # -----------------------
-        # Shared turn orchestration context (used by both phases).
-        # -----------------------
+        turn_ctx = TurnContext.fresh(
+            current_location=self.game_state.player_location,
+            roll_mode=self.roll_mode,
+            manual_roll_provider=self.manual_roll_provider,
+        )
+        bind_turn_orchestration_ctx(self.game_state, turn_ctx.as_dict())
 
-        turn_ctx: Dict[str, Any] = {
-            "phase": "phase_one",
-            "todo": [],
-            "todo_revision": 0,
-            "todo_summary": "",
-            "notes": [],
-            "all_world_tool_calls": [],
-            "current_location": self.game_state.player_location,
-            "finalize": None,
-            "finalize_writes": None,
-            "roll_mode": self.roll_mode,
-            "manual_roll_provider": (
-                self.manual_roll_provider if self.roll_mode == "manual" else None
-            ),
-            # Populated by check_can_interact, when a player-named target cannot be resolved to an existing world object.
-            "unresolved_interaction_targets": [],
-            # Tracks how many entities/items have been created this turn.
-            "creation_counts": {"entities": 0, "items": 0},
-        }
-        action_tool_calls: List[Dict[str, Any]] = []
-        bind_turn_orchestration_ctx(self.game_state, turn_ctx)
-
-        successful_tool_calls: Dict[str, int] = {}
-
+        try:
         # =====================================================
         # PHASE 1: Read-only action + mechanics loop.
         # =====================================================
-
-        phase_one_tool_defs: list[dict[str, Any]] = [
-            *PHASE_1_TOOL_DEFINITIONS,
-            FINALIZE_TURN_TOOL_DEFINITION,
-        ]
-        phase_one_allowed_names = set(PHASE_1_TOOL_NAMES) | {"finalize_turn"}
-
-        _PHASE_ONE_CACHEABLE_TOOLS = frozenset({
-            "check_can_interact",
-            "get_current_context",
-            "list_scene_entities",
-            "get_entity_state",
-            "get_world_graph",
-            "get_world_connections",
-            "get_world_location_overview",
-            "get_world_location_detail",
-            "retrieve_memory_tool",
-            "get_recent_skill_checks",
-        })
-
-        def _cache_signature(tool_name: str, args: Dict[str, Any]) -> str:
-            # Strip internal-only kwargs that should not affect the cache key.
-            cleaned = {
-                key: value
-                for key, value in (args or {}).items()
-                if not str(key).startswith("_")
-            }
-            try:
-                payload = json.dumps(cleaned, sort_keys=True, default=str)
-            except Exception:
-                payload = repr(sorted((args or {}).items()))
-            return f"{tool_name}::{payload}"
-
-        def phase_one_tool_executor(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-            args = dict(arguments or {})
-            turn_ctx["current_location"] = self.game_state.player_location
-
-            # Cache lookup: if the model is re-issuing a read
-            # because of a validation rejection in the previous iteration,
-            # serve the prior result instead of executing again. This is
-            # what prevents check_can_interact from prompting for a second
-            # History roll when the model just needed to add a Decision
-            # Summary header to its text.
-            cache: Dict[str, Dict[str, Any]] = turn_ctx.setdefault("phase_one_tool_cache", {})
-            cache_key = _cache_signature(tool_name, args)
-            if tool_name in _PHASE_ONE_CACHEABLE_TOOLS and cache_key in cache:
-                cached_result = dict(cache[cache_key])
-                cached_result["_cached"] = True
-                turn_ctx["all_world_tool_calls"].append({
-                    "phase": "phase_one",
-                    "name": tool_name,
-                    "arguments": args,
-                    "result": cached_result,
-                    "cached": True,
-                })
-                return cached_result
-
-            # Manual roll passthrough (UI-supplied d20) for skill_check / single-die roll_dice.
-            manual_roll_supported = (
-                tool_name == "skill_check"
-                or (tool_name == "roll_dice" and int(args.get("count", 1) or 1) == 1)
-            )
-            if (
-                manual_roll_supported
-                and self.roll_mode == "manual"
-                and callable(self.manual_roll_provider)
-                and "_manual_roll" not in args
-            ):
-                args["_manual_roll"] = int(self.manual_roll_provider({
-                    "tool_name": tool_name,
-                    "phase": "phase_one",
-                    "arguments": dict(args),
-                }))
-
-            result = execute_world_tool(tool_name, args, self.game_state)
-
-            success = result.get("ok")
-            if success is None:
-                success = result.get("success", True)
-
-            turn_ctx["all_world_tool_calls"].append({
-                "phase": "phase_one",
-                "name": tool_name,
-                "arguments": args,
-                "result": result,
-            })
-
-            # Store successful results from cacheable tools so duplicate
-            # calls later in the turn return the same payload without
-            # re-executing.
-            if success and tool_name in _PHASE_ONE_CACHEABLE_TOOLS:
-                cache[cache_key] = dict(result)
-
-            if success:
-                successful_tool_calls[tool_name] = successful_tool_calls.get(tool_name, 0) + 1
-
-            if tool_name in {"roll_dice", "skill_check"}:
-                action_tool_calls.append({
-                    "phase": "phase_one",
-                    "name": tool_name,
-                    "arguments": args,
-                    "result": result,
-                })
-
-            return result
-
-        def phase_one_pre_tool_use(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-            _ = arguments
-            if tool_name not in phase_one_allowed_names:
-                return {
-                    "allow": False,
-                    "retryable": False,
-                    "reason": (
-                        f"Tool '{tool_name}' is not available in Phase 1. "
-                        "Use only read tools, mechanics tools, and finalize_turn."
-                    ),
-                }
-            # Block any second call to finalize_turn after a successful one.
-            if tool_name == "finalize_turn" and turn_ctx.get("finalize") is not None:
-                return {
-                    "allow": False,
-                    "retryable": False,
-                    "reason": (
-                        "finalize_turn was already called and succeeded. "
-                        "STOP RESPONDING. Do not call finalize_turn again. "
-                        "Do not call any more tools. The narrator will run automatically."
-                    ),
-                }
-            return {"allow": True}
-
-        def phase_one_post_tool_use(tool_name: str, arguments: Dict[str, Any], payload: Dict[str, Any]) -> Optional[str]:
-            _ = arguments
-            success = payload.get("ok")
-            if success is None:
-                success = payload.get("success", True)
-            if success:
-                return None
-            error_text = str(payload.get("error") or payload.get("reason") or "").lower()
-            if "unknown tool" in error_text:
-                return f"Unknown tool `{tool_name}`. Use one of the provided tools."
-            if tool_name == "skill_check":
-                reason = str(payload.get("reason") or payload.get("error") or "unknown reason")
-                return f"skill_check failed: {reason}. Retry with valid entity_key and skill name."
-            return None
-
-        def phase_one_response_hook(assistant_text: str, tool_calls: Sequence[Dict[str, Any]], _iteration: int) -> Optional[str]:
-            text = str(assistant_text or "").strip()
-            if len(tool_calls) > 1:
-                return "Use at most one tool call per response."
-            if not text:
-                if tool_calls:
-                    return None
-                return "Every response must include a `Decision Summary:` line."
-            if not _extract_labeled_line(text, "Decision Summary"):
-                return "Every response must begin with `Decision Summary: ...`."
-            # Catch the "tool call as text" failure mode: model wrote a tool
-            # name in markdown but did not actually call it.
-            if (
-                not tool_calls
-                and turn_ctx.get("finalize") is None
-                and re.search(r"(?i)\b(tool|function)\s*:\s*finalize_turn\b", text)
-            ):
-                return (
-                    "Detected `finalize_turn` written as text instead of called "
-                    "as a tool. Issue a real function call to finalize_turn."
-                )
-            if (
-                not tool_calls
-                and _mentions_unresolved_roll_request(text)
-                and turn_ctx.get("finalize") is None
-                and not _turn_has_resolved_roll(turn_ctx)
-            ):
-                return "If a roll/check is needed, call `skill_check` now. Do not defer rolls to narration."
-            return None
-
-        def phase_one_stop_hook(assistant_text: str, already_fired: bool) -> Optional[str]:
-            _ = assistant_text
-            if turn_ctx.get("finalize") is None:
-                return (
-                    "The phase is not finished. Call `finalize_turn` now "
-                    "with this exact shape: "
-                    '{"turn_summary": "<what happened this turn>", '
-                    '"narration_focus": "<what the narrator should describe>", '
-                    '"blocked_reason": ""}. '
-                    "If something blocked the action, put the reason in "
-                    "blocked_reason instead of leaving it empty. Do not "
-                    "call any other tools first."
-                )
-
-            if already_fired:
-                return None
-
-            finalize_payload_local = turn_ctx.get("finalize") or {}
-            turn_summary_text = str(finalize_payload_local.get("turn_summary") or "")
-            narration_focus_text = str(finalize_payload_local.get("narration_focus") or "")
-            search_text = " ".join([
-                str(player_input or ""),
-                turn_summary_text,
-                narration_focus_text,
-            ]).lower()
-
-            retrieved_keys: set[str] = set()
-            for call in turn_ctx["all_world_tool_calls"]:
-                if call.get("phase") != "phase_one":
-                    continue
-                if call.get("name") != "retrieve_memory_tool":
-                    continue
-                if not _tool_call_succeeded(call):
-                    continue
-                args = call.get("arguments") or {}
-                name = str(args.get("entity_name") or "").strip()
-                if not name:
-                    continue
-                obj = find_world_object(name, self.game_state)
-                if obj is not None:
-                    retrieved_keys.add(obj.key)
-
-            missing_npcs: list[str] = []
-            missing_locations: list[str] = []
-
-            # NPCs in the current scene whose name appears in the player's
-            # input or in the finalize payload, that have memories on file
-            # and were not retrieved against this phase.
-            for actor_name in state.scene_actors or []:
-                name_str = str(actor_name or "").strip()
-                if not name_str:
-                    continue
-                if name_str.lower() not in search_text:
-                    continue
-                npc = find_world_object(name_str, self.game_state)
-                if npc is None:
-                    continue
-                if getattr(npc, "entity_type", "") != "npc":
-                    continue
-                if getattr(npc, "memory_count", 0) <= 0:
-                    continue
-                if npc.key in retrieved_keys:
-                    continue
-                if npc.name not in missing_npcs:
-                    missing_npcs.append(npc.name)
-
-            # Locations the player is moving to (verified by check_can_interact)
-            # that have memories on file and were not retrieved against.
-            if _is_movement_request(player_input):
-                current_loc_key = str(self.game_state.player_location or "").strip()
-                for call in turn_ctx["all_world_tool_calls"]:
-                    if call.get("phase") != "phase_one":
-                        continue
-                    if call.get("name") != "check_can_interact":
-                        continue
-                    if not _tool_call_succeeded(call):
-                        continue
-                    result = call.get("result") or {}
-                    if not result.get("can_interact"):
-                        continue
-                    if str(result.get("entity_type") or "").lower() != "location":
-                        continue
-                    args = call.get("arguments") or {}
-                    target = str(args.get("entity_key") or "").strip()
-                    if not target:
-                        continue
-                    loc = find_world_object(target, self.game_state)
-                    if loc is None:
-                        continue
-                    if getattr(loc, "entity_type", "") != "location":
-                        continue
-                    if loc.key == current_loc_key:
-                        continue
-                    if getattr(loc, "memory_count", 0) <= 0:
-                        continue
-                    if loc.key in retrieved_keys:
-                        continue
-                    if loc.name not in missing_locations:
-                        missing_locations.append(loc.name)
-
-            if not missing_npcs and not missing_locations:
-                return None
-
-            nudge_lines: list[str] = [
-                "Soft reminder: relevant stored memory was not retrieved this "
-                "turn. Consider calling `retrieve_memory_tool` before "
-                "finalizing so the narrator can voice NPCs and describe "
-                "locations with continuity. Phase 2 does not retrieve memory; "
-                "if it is not surfaced here it will not reach the narration."
-            ]
-            if missing_npcs:
-                npc_list = ", ".join(missing_npcs)
-                nudge_lines.append(
-                    "- NPC(s) the player addressed who have stored memories: "
-                    f"{npc_list}"
-                )
-            if missing_locations:
-                loc_list = ", ".join(missing_locations)
-                nudge_lines.append(
-                    "- Location(s) the player is moving to that have stored "
-                    f"memories: {loc_list}"
-                )
-            nudge_lines.append(
-                "If you call retrieve_memory_tool, re-issue finalize_turn "
-                "afterward. If you choose to proceed without retrieving, "
-                "re-issue finalize_turn unchanged and the turn will continue."
-            )
-
-            turn_ctx["finalize"] = None
-            return "\n".join(nudge_lines)
-
-        turn_ctx["phase"] = "phase_one"
-        phase_one_prompt = build_agent_prompt(state)
-
-        phase_one_loop = self.adapter.run_tool_loop(
-            stage="phase_one",
-            system_prompt=PHASE_1_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": phase_one_prompt}],
-            tools=phase_one_tool_defs,
-            tool_executor=phase_one_tool_executor,
-            max_iterations=16,
-            pre_tool_use=phase_one_pre_tool_use,
-            post_tool_use=phase_one_post_tool_use,
-            assistant_response_hook=phase_one_response_hook,
-            stop_hook=phase_one_stop_hook,
-            early_exit=lambda: turn_ctx.get("finalize") is not None,
-        )
-
-        finalize_payload = turn_ctx.get("finalize") or {
-            "turn_summary": f"Turn ended without an explicit finalize_turn call. Player action: {player_input}",
-            "narration_focus": "",
-            "blocked_reason": "Phase 1 hit max iterations before finalizing.",
-        }
+            phase_one_output = self.phase_one.run(PhaseOneInput(
+                state=state,
+                player_input=player_input,
+                turn_ctx=turn_ctx,
+                game_state=self.game_state,
+                roll_mode=self.roll_mode,
+                manual_roll_provider=self.manual_roll_provider,
+            ))
 
         # =====================================================
         # NARRATION (against pre-write state)
         # =====================================================
-
-        phase_one_tool_calls = [
-            c for c in turn_ctx["all_world_tool_calls"] if c.get("phase") == "phase_one"
-        ]
-
-        narrate_prompt = build_narrate_prompt(
-            state,
-            turn_summary=finalize_payload.get("turn_summary", ""),
-            narration_focus=finalize_payload.get("narration_focus", ""),
-            blocked_reason=finalize_payload.get("blocked_reason", ""),
-            action_results=action_tool_calls,
-            phase_one_tool_calls=phase_one_tool_calls,
-        )
-
-        if self.adapter.verbose:
-            print("\n[NARRATE] Generating narrative (pre-write state)")
-
-        narrative, narrate_debug = self.steps["narrate"].run(
-            self.adapter,
-            narrate_prompt,
-        )
+            narration_output = self.narration.run(NarrationInput(
+                state=state,
+                turn_summary=phase_one_output.finalize_payload.get("turn_summary", ""),
+                narration_focus=phase_one_output.finalize_payload.get("narration_focus", ""),
+                blocked_reason=phase_one_output.finalize_payload.get("blocked_reason", ""),
+                action_tool_calls=phase_one_output.action_tool_calls,
+                phase_one_tool_calls=phase_one_output.phase_one_tool_calls,
+            ))
 
         # =====================================================
         # PHASE 2: Writer loop.
         # =====================================================
-
-        phase_two_tool_defs: list[dict[str, Any]] = [
-            *PHASE_2_TOOL_DEFINITIONS,
-            FINALIZE_WRITES_TOOL_DEFINITION,
-        ]
-        phase_two_allowed_names = set(PHASE_2_TOOL_NAMES) | {"finalize_writes"}
-
-        def phase_two_tool_executor(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-            args = dict(arguments or {})
-            result = execute_world_tool(tool_name, args, self.game_state)
-
-            success = result.get("ok")
-            if success is None:
-                success = result.get("success", True)
-
-            turn_ctx["all_world_tool_calls"].append({
-                "phase": "phase_two",
-                "name": tool_name,
-                "arguments": args,
-                "result": result,
-            })
-
-            if success:
-                successful_tool_calls[tool_name] = successful_tool_calls.get(tool_name, 0) + 1
-
-            if tool_name in {
-                "move_to_location",
-                "move_npc",
-                "write_memory_tool",
-                "move_world_item",
-                "create_npc",
-                "create_item",
-            }:
-                action_tool_calls.append({
-                    "phase": "phase_two",
-                    "name": tool_name,
-                    "arguments": args,
-                    "result": result,
-                })
-
-            if tool_name in {"move_to_location", "move_npc"} and success:
-                turn_ctx["current_location"] = self.game_state.player_location
-
-            return result
-
-        def phase_two_pre_tool_use(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-            _ = arguments
-            if tool_name not in phase_two_allowed_names:
-                return {
-                    "allow": False,
-                    "retryable": False,
-                    "reason": (
-                        f"Tool '{tool_name}' is not available in Phase 2. "
-                        "Use only move_to_location, move_npc, write_memory_tool, "
-                        "move_world_item, create_npc, create_item, or finalize_writes."
-                    ),
-                }
-            # Block duplicate finalize_writes calls.
-            if tool_name == "finalize_writes" and turn_ctx.get("finalize_writes") is not None:
-                return {
-                    "allow": False,
-                    "retryable": False,
-                    "reason": (
-                        "finalize_writes was already called and succeeded. "
-                        "STOP RESPONDING. Do not call finalize_writes again. "
-                        "Do not call any more tools."
-                    ),
-                }
-            return {"allow": True}
-
-        def phase_two_post_tool_use(tool_name: str, arguments: Dict[str, Any], payload: Dict[str, Any]) -> Optional[str]:
-            _ = arguments
-            success = payload.get("ok")
-            if success is None:
-                success = payload.get("success", True)
-            if success:
-                return None
-            reason = str(payload.get("reason") or payload.get("error") or "unknown reason")
-            if tool_name == "move_to_location":
-                return (
-                    f"move_to_location failed: {reason}. "
-                    "If the destination is unreachable, skip the move and explain in writes_summary."
-                )
-            if tool_name == "write_memory_tool":
-                return f"write_memory_tool failed: {reason}. Retry with a valid entity_name and non-empty memory."
-            if tool_name == "move_npc":
-                return f"move_npc failed: {reason}. Retry with a valid npc_key and destination, or skip."
-            if tool_name == "move_world_item":
-                return (
-                    f"move_world_item failed: {reason}. "
-                    "Retry with a valid item_key, holder_kind ('location' or 'entity'), and holder_key, or skip."
-                )
-            if tool_name == "create_npc":
-                retryable = bool(payload.get("retryable", True))
-                if not retryable:
-                    return f"create_npc failed and cannot be retried: {reason}. Skip and note in writes_summary."
-                return f"create_npc failed: {reason}. Retry with a valid name, or skip if the cap was reached."
-            if tool_name == "create_item":
-                retryable = bool(payload.get("retryable", True))
-                if not retryable:
-                    return f"create_item failed and cannot be retried: {reason}. Skip and note in writes_summary."
-                return f"create_item failed: {reason}. Retry with a valid name, or skip if the cap was reached."
-            return None
-
-        def phase_two_response_hook(assistant_text: str, tool_calls: Sequence[Dict[str, Any]], _iteration: int) -> Optional[str]:
-            text = str(assistant_text or "").strip()
-            if len(tool_calls) > 1:
-                return "Use at most one tool call per response."
-            if not text:
-                if tool_calls:
-                    return None
-                return "Every response must include a `Decision Summary:` line."
-            if not _extract_labeled_line(text, "Decision Summary"):
-                return "Every response must begin with `Decision Summary: ...`."
-            if (
-                not tool_calls
-                and turn_ctx.get("finalize_writes") is None
-                and _PHASE_2_TOOL_NAME_PATTERN.search(text)
-            ):
-                return (
-                    "Detected a tool name written as text instead of called "
-                    "as a tool. Issue a real function call."
-                )
-            return None
-
-        def phase_two_stop_hook(assistant_text: str, already_fired: bool) -> Optional[str]:
-            _ = assistant_text
-            if turn_ctx.get("finalize_writes") is None:
-                return (
-                    "The writer phase is not finished. Call `finalize_writes` "
-                    "now with this shape: "
-                    '{"writes_summary": "<short summary of writes applied>"}. '
-                    "Do not call any other tools first."
-                )
-            if already_fired:
-                return None
-
-            issues: list[str] = []
-
-            # Movement enforcement: if the player requested movement and it wasn't
-            # blocked, Phase 2 should have called move_to_location.
-            move_called_in_phase_two = any(
-                call.get("phase") == "phase_two"
-                and call.get("name") == "move_to_location"
-                and _tool_call_succeeded(call)
-                for call in turn_ctx["all_world_tool_calls"]
-            )
-            if _is_movement_request(player_input) and not move_called_in_phase_two:
-                if not str(finalize_payload.get("blocked_reason", "")).strip():
-                    issues.append(
-                        "Player movement was requested but `move_to_location` "
-                        "was not called in this phase. Call it now, then re-call finalize_writes."
-                    )
-
-            # Memory write enforcement: required on every turn except trivial ones.
-            memory_written_in_phase_two = any(
-                call.get("phase") == "phase_two"
-                and call.get("name") == "write_memory_tool"
-                and _tool_call_succeeded(call)
-                for call in turn_ctx["all_world_tool_calls"]
-            )
-            if not memory_written_in_phase_two and not _is_trivial_player_input(player_input):
-                issues.append(
-                    "No memory was written this turn. Call `write_memory_tool` with "
-                    "entity_name=\"Player\" and a brief memory describing what the "
-                    "player did, learned, or experienced. If an NPC was involved, "
-                    "also write a memory from that NPC's perspective. Then re-call "
-                    "finalize_writes."
-                )
-
-            # Location memory enforcement: if move_to_location succeeded this turn,
-            # the destination location should also receive a memory write.
-            successful_move_destinations: list[str] = []
-            for call in turn_ctx["all_world_tool_calls"]:
-                if call.get("phase") != "phase_two":
-                    continue
-                if call.get("name") != "move_to_location":
-                    continue
-                if not _tool_call_succeeded(call):
-                    continue
-                result = call.get("result") or {}
-                destination = str(result.get("new_location") or "").strip()
-                if destination:
-                    successful_move_destinations.append(destination)
-
-            if successful_move_destinations:
-                location_memory_targets: set[str] = set()
-                for call in turn_ctx["all_world_tool_calls"]:
-                    if call.get("phase") != "phase_two":
-                        continue
-                    if call.get("name") != "write_memory_tool":
-                        continue
-                    if not _tool_call_succeeded(call):
-                        continue
-                    args = call.get("arguments") or {}
-                    name = str(args.get("entity_name") or "").strip()
-                    if not name:
-                        continue
-                    obj = find_world_object(name, self.game_state)
-                    if obj is None:
-                        continue
-                    if getattr(obj, "entity_type", "") == "location":
-                        location_memory_targets.add(obj.key)
-
-                missing_location_memories = [
-                    dest for dest in successful_move_destinations
-                    if dest not in location_memory_targets
-                ]
-                if missing_location_memories:
-                    dest_list = ", ".join(missing_location_memories)
-                    issues.append(
-                        "Player arrived at a new location but no memory was written "
-                        "on that location. Call `write_memory_tool` with "
-                        f"entity_name set to the destination ({dest_list}) and a "
-                        "brief third-person memory describing the arrival from the "
-                        "location's perspective. Then re-call finalize_writes."
-                    )
-
-            if issues:
-                turn_ctx["finalize_writes"] = None
-                return (
-                    "Writes incomplete - fix before finalizing:\n"
-                    + "\n".join(f"- {issue}" for issue in issues)
-                )
-
-            return None
-
-        turn_ctx["phase"] = "phase_two"
-        phase_two_prompt = build_phase_two_prompt(
-            state,
-            turn_summary=finalize_payload.get("turn_summary", ""),
-            narration_focus=finalize_payload.get("narration_focus", ""),
-            blocked_reason=finalize_payload.get("blocked_reason", ""),
-            phase_one_tool_calls=phase_one_tool_calls,
-            narration=narrative,
-            action_results=action_tool_calls,
-            world_before=world_before,
-            unresolved_targets=turn_ctx.get("unresolved_interaction_targets", []),
-        )
-
-        if self.adapter.verbose:
-            print("\n[PHASE_TWO] Running writer phase")
-
-        phase_two_loop = self.adapter.run_tool_loop(
-            stage="phase_two",
-            system_prompt=PHASE_2_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": phase_two_prompt}],
-            tools=phase_two_tool_defs,
-            tool_executor=phase_two_tool_executor,
-            max_iterations=10,
-            pre_tool_use=phase_two_pre_tool_use,
-            post_tool_use=phase_two_post_tool_use,
-            assistant_response_hook=phase_two_response_hook,
-            stop_hook=phase_two_stop_hook,
-            early_exit=lambda: turn_ctx.get("finalize_writes") is not None,
-        )
-
-        finalize_writes_payload = turn_ctx.get("finalize_writes") or {"writes_summary": ""}
+            phase_two_output = self.phase_two.run(PhaseTwoInput(
+                state=state,
+                player_input=player_input,
+                turn_ctx=turn_ctx,
+                game_state=self.game_state,
+                finalize_payload=phase_one_output.finalize_payload,
+                phase_one_tool_calls=phase_one_output.phase_one_tool_calls,
+                narration=narration_output.narrative,
+                action_tool_calls=phase_one_output.action_tool_calls,
+                world_before=world_before,
+            ))
 
         # =====================================================
         # RECONCILIATION
         # =====================================================
-
-        next_turn_number = self.turn_index + 1
-        reconciliation = reconcile_turn(
-            self,
-            turn_number=next_turn_number,
-            player_input=player_input,
-            turn_summary=finalize_payload.get("turn_summary", ""),
-            blocked_reason=finalize_payload.get("blocked_reason", ""),
-            narration=narrative,
-            action_results=action_tool_calls,
-            world_before=world_before,
-        )
+            next_turn_number = self.turn_index + 1
+            combined_action_tool_calls = (
+                list(phase_one_output.action_tool_calls)
+                + list(phase_two_output.action_tool_calls)
+            )
+            reconciliation = reconcile_turn(
+                self,
+                turn_number=next_turn_number,
+                player_input=player_input,
+                turn_summary=phase_one_output.finalize_payload.get("turn_summary", ""),
+                blocked_reason=phase_one_output.finalize_payload.get("blocked_reason", ""),
+                narration=narration_output.narrative,
+                action_results=combined_action_tool_calls,
+                world_before=world_before,
+            )
 
         # =====================================================
         # COMMIT TURN
         # =====================================================
+            self.history.add_player_turn(player_input)
+            self.history.add_dm_turn(narration_output.narrative)
+            self.turn_index = next_turn_number
 
-        self.history.add_player_turn(player_input)
-        self.history.add_dm_turn(narrative)
-        self.turn_index = next_turn_number
+            state_after = self._make_state(player_input)
 
-        state = self._make_state(player_input)
+            successful_tool_counts: Dict[str, int] = {}
+            for source in (phase_one_output.successful_tool_counts, phase_two_output.successful_tool_counts):
+                for name, count in source.items():
+                    successful_tool_counts[name] = successful_tool_counts.get(name, 0) + count
 
-        result = {
-            "turn": self.turn_index,
-            "narration": {"ic": narrative},
-            "beat": self.beats.current(),
-            "player_location": self.game_state.player_location,
-            "scene": self.world.scene_snapshot(self.game_state.player_location),
-            "tool_calls": action_tool_calls,
-            "world_tool_calls": json.loads(json.dumps(turn_ctx["all_world_tool_calls"], ensure_ascii=True)),
-            "turn_todo": json.loads(json.dumps(turn_ctx["todo"])),
-            "turn_summary": finalize_payload.get("turn_summary", ""),
-            "narration_focus": finalize_payload.get("narration_focus", ""),
-            "blocked_reason": finalize_payload.get("blocked_reason", ""),
-            "writes_summary": finalize_writes_payload.get("writes_summary", ""),
-            "unresolved_interaction_targets": turn_ctx.get("unresolved_interaction_targets", []),
-            "entities_created": reconciliation.get("entities_created", []),
-            "items_created": reconciliation.get("items_created", []),
-            "phase_summaries": {
-                "phase_one": finalize_payload.get("turn_summary", ""),
-                "narration": _summary_snippet(narrative),
-                "phase_two": finalize_writes_payload.get("writes_summary", ""),
-                "reconciliation": reconciliation.get("story_status", ""),
-            },
-            "reconciliation": reconciliation,
-        }
+            result = {
+                "turn": self.turn_index,
+                "narration": {"ic": narration_output.narrative},
+                "beat": self.beats.current(),
+                "player_location": self.game_state.player_location,
+                "scene": self.world.scene_snapshot(self.game_state.player_location),
+                "tool_calls": combined_action_tool_calls,
+                "world_tool_calls": json.loads(
+                    json.dumps(turn_ctx.all_world_tool_calls, ensure_ascii=True)
+                ),
+                "turn_todo": json.loads(json.dumps(turn_ctx.todo)),
+                "turn_summary": phase_one_output.finalize_payload.get("turn_summary", ""),
+                "narration_focus": phase_one_output.finalize_payload.get("narration_focus", ""),
+                "blocked_reason": phase_one_output.finalize_payload.get("blocked_reason", ""),
+                "writes_summary": phase_two_output.finalize_writes_payload.get("writes_summary", ""),
+                "unresolved_interaction_targets": list(turn_ctx.unresolved_interaction_targets),
+                "entities_created": reconciliation.get("entities_created", []),
+                "items_created": reconciliation.get("items_created", []),
+                "phase_summaries": {
+                    "phase_one": phase_one_output.finalize_payload.get("turn_summary", ""),
+                    "narration": _summary_snippet(narration_output.narrative),
+                    "phase_two": phase_two_output.finalize_writes_payload.get("writes_summary", ""),
+                    "reconciliation": reconciliation.get("story_status", ""),
+                },
+                "reconciliation": reconciliation,
+            }
 
-        trace["PHASE_ONE"] = {
-            "status": phase_one_loop.get("status"),
-            "prompt": phase_one_prompt,
-            "final_answer": phase_one_loop.get("final_answer", ""),
-            "rounds": phase_one_loop.get("rounds", []),
-            "messages": phase_one_loop.get("messages", []),
-            "tool_calls": phase_one_loop.get("tool_calls", []),
-            "finalize": finalize_payload,
-        }
-        trace["NARRATE"] = {
-            "prompt": narrate_prompt,
-            **narrate_debug,
-        }
-        trace["PHASE_TWO"] = {
-            "status": phase_two_loop.get("status"),
-            "prompt": phase_two_prompt,
-            "final_answer": phase_two_loop.get("final_answer", ""),
-            "rounds": phase_two_loop.get("rounds", []),
-            "messages": phase_two_loop.get("messages", []),
-            "tool_calls": phase_two_loop.get("tool_calls", []),
-            "finalize_writes": finalize_writes_payload,
-        }
-        trace["ACTION_TOOLS"] = action_tool_calls
-        trace["WORLD_TOOLS"] = turn_ctx["all_world_tool_calls"]
-        trace["MOVEMENT_BLOCKED"] = (
-            any(
-                call.get("name") == "move_to_location"
-                and call.get("phase") == "phase_two"
-                and not _tool_call_succeeded(call)
-                for call in turn_ctx["all_world_tool_calls"]
+        # =====================================================
+        # TRACE
+        # =====================================================
+            trace["PHASE_ONE"] = {
+                "status": phase_one_output.loop_result.get("status"),
+                "prompt": phase_one_output.prompt,
+                "final_answer": phase_one_output.loop_result.get("final_answer", ""),
+                "rounds": phase_one_output.loop_result.get("rounds", []),
+                "messages": phase_one_output.loop_result.get("messages", []),
+                "tool_calls": phase_one_output.loop_result.get("tool_calls", []),
+                "finalize": phase_one_output.finalize_payload,
+            }
+            trace["NARRATE"] = {
+                "prompt": narration_output.prompt,
+                **narration_output.debug,
+            }
+            trace["PHASE_TWO"] = {
+                "status": phase_two_output.loop_result.get("status"),
+                "prompt": phase_two_output.prompt,
+                "final_answer": phase_two_output.loop_result.get("final_answer", ""),
+                "rounds": phase_two_output.loop_result.get("rounds", []),
+                "messages": phase_two_output.loop_result.get("messages", []),
+                "tool_calls": phase_two_output.loop_result.get("tool_calls", []),
+                "finalize_writes": phase_two_output.finalize_writes_payload,
+            }
+            trace["ACTION_TOOLS"] = combined_action_tool_calls
+            trace["WORLD_TOOLS"] = list(turn_ctx.all_world_tool_calls)
+            trace["MOVEMENT_BLOCKED"] = self._movement_blocked(turn_ctx, world_before)
+            trace["SUCCESSFUL_TOOL_COUNTS"] = dict(successful_tool_counts)
+            trace["RECONCILIATION"] = reconciliation
+            trace["PROMPT_STATE_AFTER_RECONCILE"] = json.loads(
+                json.dumps(vars(state_after), ensure_ascii=True)
             )
-            and self.game_state.player_location == world_before.get("player_location", "")
+            trace["STATE_AFTER"] = build_trace_state_snapshot(self, state_after)
+            result["llm_trace"] = trace
+
+            self.last_turn_result = json.loads(json.dumps(result, ensure_ascii=True))
+            return result
+        finally:
+            clear_turn_orchestration_ctx(self.game_state)
+
+    def _movement_blocked(self, turn_ctx: TurnContext, world_before: Dict[str, Any]) -> bool:
+        """True when a Phase 2 move_to_location call failed and the player did not move."""
+        from .turn_heuristics import _tool_call_succeeded
+        any_failed_move = any(
+            call.get("name") == "move_to_location"
+            and call.get("phase") == "phase_two"
+            and not _tool_call_succeeded(call)
+            for call in turn_ctx.all_world_tool_calls
         )
-        trace["SUCCESSFUL_TOOL_COUNTS"] = dict(successful_tool_calls)
-        trace["RECONCILIATION"] = reconciliation
-        trace["PROMPT_STATE_AFTER_RECONCILE"] = json.loads(json.dumps(vars(state), ensure_ascii=True))
-        trace["STATE_AFTER"] = build_state_snapshot()
-        result["llm_trace"] = trace
+        return any_failed_move and self.game_state.player_location == world_before.get("player_location", "")
 
-        self.last_turn_result = json.loads(json.dumps(result, ensure_ascii=True))
-
-        clear_turn_orchestration_ctx(self.game_state)
-        return result
-
-    # -----------------------
+    # =====================================================
+    # Intro generation
+    # =====================================================
     def generate_intro(self):
         intro_scene = self.world.scene_snapshot(self.game_state.player_location)
 
@@ -1202,3 +410,6 @@ class StoryEngine:
 
     def snapshot(self):
         return self.snapshot_builder.build(self)
+
+
+__all__ = ["StoryEngine"]

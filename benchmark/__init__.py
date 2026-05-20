@@ -6,23 +6,19 @@ python3 -m benchmark.runner --model gpt-oss:20b
 python3 -m benchmark.runner --model gpt-oss:20b --no-html
 
 # Run specific tests only
-python3 -m benchmark.runner --model gpt-oss:20b --tests intent mechanics_phase --no-html
+python3 -m benchmark.runner --model gpt-oss:20b --tests phase_one narration
+The --tests choices are phase_one, narration, phase_two (any combination of those)
 
-
-
-
+# Different provider
+python3 -m benchmark.runner --model claude-haiku-4-5-20251001 --provider anthropic
 
 # Generating a comparison report later:
 python3 -m benchmark.report \
-  output/20260305_123456_gpt-oss_20b_results.json \
-  output/20260305_130000_llama3.1_70b_results.json \
-  output/20260305_131500_gpt-oss_120b _results.json
+  output/20260517_143000_gpt-oss_20b_results.json \
+  output/20260517_150000_llama3.1_70b_results.json
 
-# Auto-pick the N most recent results in the output directory: ()
+# Auto-pick the N most recent results in the output directory:
 python3 -m benchmark.report --latest 3
-
-# Explicit json files with custom output path:
-python3 -m benchmark.report output/a.json output/b.json --output my_comparison.html
 
 Latest with custom output path:
 python3 -m benchmark.report --latest 3 --output my_comparison.html
