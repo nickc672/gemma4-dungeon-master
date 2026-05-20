@@ -225,6 +225,8 @@ def initialize_session(config: SessionConfig) -> None:
     st.session_state.turn_records = []
     st.session_state.config_signature = config.reset_signature()
     st.session_state.active_model = config.model
+    st.session_state._engine_provider = config.provider
+    st.session_state._engine_api_key = config.api_key
     st.session_state.active_story_key = config.story_key
     st.session_state.session_dir = str(session_dir)
     st.session_state.snapshot_files = []
@@ -247,15 +249,75 @@ def ensure_session(config: SessionConfig, *, reset_requested: bool) -> None:
         initialize_session(config)
 
 
+def sync_engine_provider_and_model(
+    engine: StoryEngine,
+    *,
+    provider: str,
+    api_key: str,
+    model: str,
+) -> None:
+    """
+    Hot-swap the live engine's provider, API key, and/or model when the
+    sidebar selection diverges from what the engine was initialized with.
+    Preserves chat history so the user doesn't lose state on every switch.
+    """
+    provider = str(provider or "").strip().lower()
+    model = str(model or "").strip()
+    api_key = str(api_key or "")
+
+    last_provider = str(st.session_state.get("_engine_provider", "")).strip().lower()
+    last_api_key = str(st.session_state.get("_engine_api_key", ""))
+    last_model = str(st.session_state.get("active_model", "")).strip()
+
+    provider_changed = bool(last_provider) and last_provider != provider
+    api_key_changed = (
+        provider in {"openai", "anthropic"}
+        and last_api_key != api_key
+    )
+
+    if provider_changed or api_key_changed:
+        try:
+            from orchestrator.app_config import (
+                get_provider_config,
+                get_provider_default_options,
+                get_provider_stage_options,
+            )
+            from orchestrator.llm_interaction.providers.factory import create_provider
+
+            provider_config = dict(get_provider_config(provider))
+            if api_key:
+                provider_config["api_key"] = api_key
+            new_provider = create_provider(provider, provider_config)
+            engine.adapter.set_provider(
+                new_provider,
+                default_options=get_provider_default_options(provider),
+                stage_options=get_provider_stage_options(provider),
+            )
+            st.session_state._engine_provider = provider
+            st.session_state._engine_api_key = api_key
+            if provider_changed:
+                set_notice(f"Provider switched to '{provider}'. The next request will use it.")
+            elif api_key_changed:
+                set_notice(f"{provider.capitalize()} API key updated.")
+        except Exception as exc:
+            st.error(f"Failed to switch provider to '{provider}': {exc}")
+            return
+
+    if model and model != last_model:
+        engine.adapter.model = model
+        st.session_state.active_model = model
+        if not provider_changed and not api_key_changed:
+            set_notice(f"Model changed to '{model}'. The next request will use it.")
+
+
+# Legacy alias — kept so any external callers continue to work.
 def sync_engine_model(engine: StoryEngine, model: str) -> None:
-    selected_model = str(model or "").strip()
-    if not selected_model:
-        return
-    if st.session_state.get("active_model") == selected_model:
-        return
-    engine.adapter.model = selected_model
-    st.session_state.active_model = selected_model
-    set_notice(f"Model changed to '{selected_model}'. The next request will use it.")
+    sync_engine_provider_and_model(
+        engine,
+        provider=str(st.session_state.get("_engine_provider", "")),
+        api_key=str(st.session_state.get("_engine_api_key", "")),
+        model=model,
+    )
 
 
 def get_story_engine() -> StoryEngine:
@@ -299,6 +361,15 @@ def build_sidebar(story_sources: list[StorySource]) -> tuple[SessionConfig, Disp
             index=provider_choices.index(selected_provider),
             key="provider_input",
         ) or default_provider
+
+        # When the provider has changed since the engine was last initialized,
+        # any previously-selected model belongs to the old provider (e.g.
+        # "llama3.1:8b" left over from Ollama after switching to Anthropic).
+        # Drop the stale key so the model selectbox renders with the new
+        # provider's default rather than carrying invalid state forward.
+        last_engine_provider = str(st.session_state.get("_engine_provider", "")).strip().lower()
+        if last_engine_provider and last_engine_provider != provider:
+            st.session_state.pop("model_input", None)
 
         _env_key_names = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
         api_key = ""
@@ -1721,7 +1792,12 @@ def main() -> None:
     ensure_session(session_config, reset_requested=reset_requested)
 
     engine = get_story_engine()
-    sync_engine_model(engine, session_config.model)
+    sync_engine_provider_and_model(
+        engine,
+        provider=session_config.provider,
+        api_key=session_config.api_key,
+        model=session_config.model,
+    )
     try:
         engine.adapter.verbose = bool(display.show_debug_trace)
     except Exception:
