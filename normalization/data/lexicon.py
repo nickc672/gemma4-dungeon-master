@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+#the data folder was originally outside of normalization folder, and this lexicon.py was in /orchestrator/lexicon.py (not in either of these folders)
+
 import argparse
 import os
 import re
