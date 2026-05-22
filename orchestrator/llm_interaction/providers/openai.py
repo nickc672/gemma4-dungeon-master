@@ -64,7 +64,10 @@ class OpenAIProvider:
         if "temperature" in opts:
             kwargs["temperature"] = opts["temperature"]
         if "max_tokens" in opts:
-            kwargs["max_tokens"] = opts["max_tokens"]
+            if _uses_max_completion_tokens(model):
+                kwargs["max_completion_tokens"] = opts["max_tokens"]
+            else:
+                kwargs["max_tokens"] = opts["max_tokens"]
         if "top_p" in opts:
             kwargs["top_p"] = opts["top_p"]
         if tools:
@@ -153,5 +156,20 @@ def _parse_response(response: Any) -> LLMResponse:
 
     return LLMResponse(text=text, tool_calls=tool_calls)
 
+
+def _uses_max_completion_tokens(model: str) -> bool:
+    """
+    Newer OpenAI models (GPT-5.x family, o-series reasoning models) replaced
+    `max_tokens` with `max_completion_tokens` and reject the older name.
+    Older models (gpt-4o, gpt-4, gpt-3.5) still accept `max_tokens` and reject
+    the newer one.
+    """
+    name = (model or "").strip().lower()
+    if name.startswith("gpt-5"):
+        return True
+    # o1, o3, o4, o5... (but NOT 'o' on its own, and not gpt-4o)
+    if len(name) >= 2 and name[0] == "o" and name[1].isdigit():
+        return True
+    return False
 
 __all__ = ["OpenAIProvider"]

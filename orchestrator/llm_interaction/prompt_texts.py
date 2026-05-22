@@ -42,7 +42,7 @@ Scene reads:
 - get_entity_state: full state for one entity (skills, stats, inventory, location).
 
 Memory reads:
-- retrieve_memory_tool: search a world object's stored memory. Call before voicing an addressed NPC, before describing a returning or newly-arrived location, before answering player questions about prior events, and on social or investigative turns that depend on history. The narrator does not retrieve memory; if not surfaced here, it will not reach the narration.
+- retrieve_memory_tool: search a world object's stored memory. USE ONLY for OFF-SCENE targets the player references but is not currently with: a distant character, an item at another location, a place the player has been to before but is not at now. Do NOT call this for entities in the current scene, because check_can_interact already surfaces their recent memory to the narrator. Calling it for an in-scene target returns a redirect and does not retrieve memory.
 
 World reads (only when scene reads are insufficient):
 - get_world_story: current story / status text.
@@ -51,7 +51,9 @@ World reads (only when scene reads are insufficient):
 - list_world_items, get_world_item: items by location or holder.
 
 Validation:
-- check_can_interact: REQUIRED before any player movement. Confirms reachability; rolls History on non-adjacent routes. Never narrate arrival without a passing result. If the target is unknown, the result includes unresolved_target so Phase 2 can decide whether to materialize it.
+- check_can_interact: REQUIRED before any player movement or any kind of interaction with any character/item/location/person/place/thing.
+check_can_interact is very likely to be called multiple times on a turn, it is the most important, baseline tool call that should be made.
+Never assume anything or anyone is reachable/interactable, this tool tells you if they are.
 
 Mechanics:
 - skill_check: resolve uncertain or risky outcomes. Use entity_key="Player" for player checks.
@@ -78,38 +80,45 @@ Decision Summary: Movement requested. Validating reachability of Harbor Gate.
 [calls check_can_interact with {"entity_key": "Harbor Gate"}]
 
 Response 2
-Decision Summary: Harbor Gate is adjacent. Finalizing.
-[calls finalize_turn with {"turn_summary": "Player moved from Town Square to Harbor Gate. check_can_interact confirmed adjacency.", "narration_focus": "Player arrives at Harbor Gate and sees the waterfront.", "blocked_reason": ""}]
+Decision Summary: Harbor Gate is adjacent and its memory is surfaced. Finalizing.
+[calls finalize_turn with {"turn_summary": "Player moved from Town Square to Harbor Gate. check_can_interact confirmed adjacency and surfaced Harbor Gate's prior memory for narration.", "narration_focus": "Player arrives at Harbor Gate and sees the waterfront.", "blocked_reason": ""}]
 
-EXAMPLE 2 - Player addresses an NPC with prior history:
+EXAMPLE 2 - Player addresses an NPC who is in the scene:
 Player Request: I ask Mitch what he saw that night.
 
 Response 1
-Decision Summary: Confirming Mitch is reachable.
+Decision Summary: Mitch is in the scene; confirming the interaction.
 [calls check_can_interact with {"entity_key": "Mitch"}]
 
 Response 2
-Decision Summary: Pulling Mitch's memory before the narrator voices his reply.
-[calls retrieve_memory_tool with {"entity_name": "Mitch", "context": "what Mitch saw that night, the wizard, timeline of events"}]
+Decision Summary: Mitch is reachable and his recent memory is now in the narration context. Finalizing.
+[calls finalize_turn with {"turn_summary": "Player questioned Mitch about the night. Mitch's surfaced memory shows his earlier account blaming the town wizard.", "narration_focus": "Voice Mitch consistent with the memory surfaced by check_can_interact; surface the timeline inconsistency without spelling it out.", "blocked_reason": ""}]
+
+EXAMPLE 3 - Player asks about someone NOT in the scene:
+Player Request: I ask the barkeep what she has heard about Captain Varr lately.
+
+Response 1
+Decision Summary: The barkeep is in the scene; confirming.
+[calls check_can_interact with {"entity_key": "Barkeep"}]
+
+Response 2
+Decision Summary: Captain Varr is not in this scene; pulling his off-scene memory so the barkeep's response can reference real prior events.
+[calls retrieve_memory_tool with {"entity_name": "Captain Varr", "context": "Captain Varr recent movements, rumors at the docks"}]
 
 Response 3
-Decision Summary: Mitch's prior account retrieved. Finalizing.
-[calls finalize_turn with {"turn_summary": "Player questioned Mitch about the night. Prior memory shows Mitch blamed the town wizard with shifting timelines and appeared jittery.", "narration_focus": "Voice Mitch consistent with his earlier story. Surface the timeline inconsistency without spelling it out.", "blocked_reason": ""}]
+Decision Summary: Both the barkeep's in-scene memory and Captain Varr's off-scene memory are now available. Finalizing.
+[calls finalize_turn with {"turn_summary": "Player asked the barkeep about Captain Varr. Barkeep memory surfaced by check_can_interact; Varr's prior movements pulled via retrieve_memory_tool.", "narration_focus": "Let the barkeep answer with detail consistent with both memory sources.", "blocked_reason": ""}]
 
-EXAMPLE 3 - Player returns to a previously-visited location:
+EXAMPLE 4 - Player returns to a previously-visited location:
 Player Request: I head back to the Copper Cup.
 
 Response 1
-Decision Summary: Movement requested. Validating reachability of the Copper Cup.
+Decision Summary: Movement requested. Validating reachability of the Copper Cup; this will also surface its recent memory.
 [calls check_can_interact with {"entity_key": "Copper Cup"}]
 
 Response 2
-Decision Summary: Copper Cup is reachable and has history. Pulling its memory for continuity.
-[calls retrieve_memory_tool with {"entity_name": "Copper Cup", "context": "recent events at the Copper Cup, who was last seen there"}]
-
-Response 3
-Decision Summary: Prior context retrieved. Finalizing.
-[calls finalize_turn with {"turn_summary": "Player returns to the Copper Cup. Prior memory notes Mitch by the cold hearth and the evasive barkeep.", "narration_focus": "Player arrives at the Copper Cup; describe changes since the last visit and who is present.", "blocked_reason": ""}]
+Decision Summary: Copper Cup is reachable and its memory has been forwarded to the narrator. Finalizing.
+[calls finalize_turn with {"turn_summary": "Player returns to the Copper Cup. The location's prior memory was surfaced by check_can_interact (notes Mitch by the cold hearth and the evasive barkeep).", "narration_focus": "Player arrives at the Copper Cup; describe changes since the last visit and who is present.", "blocked_reason": ""}]
 """
 
 
@@ -183,7 +192,7 @@ TOOLS:
 Movement and memory:
 - move_to_location: update the player's location. Call when Phase 1's check_can_interact succeeded and the narration describes arrival. Do NOT call if blocked_reason is set.
 - move_npc: move an NPC. Call when narration describes an NPC traveling, leaving, or accompanying the player.
-- write_memory_tool: record a memory sentence on a world object (Player, NPC, or Location). Required every non-trivial turn for entity_name="Player". Also call for any NPC who had a meaningful interaction and for any Location where the player arrived or a notable event occurred.
+- write_memory_tool: record a memory sentence on a world object (Player, NPC, or Location). The Interacted Entities This Turn section lists every entity the player directly engaged with; treat that list as the primary guide for which entities deserve a memory write this turn. Typically the Player always gets one, plus any NPC the player addressed and any location the player arrived at or where a notable event occurred. Skip entries the narration shows were not actually engaged with.
 
 Items:
 - move_world_item: move an existing item to a new location or holder. Requires item_key, holder_kind ("location" or "entity"), and holder_key.
@@ -222,9 +231,8 @@ Aliases: pass every surface form used in narration, player input, and the Curren
 
 LOCATION MEMORY RULES:
 
-Write a location memory when:
-- The player arrives at the location (after a successful move_to_location). Describe the arrival from the location's perspective.
-- A notable event occurs there: a fight, a discovery, a contract sealed, a body found, an object destroyed, a confrontation.
+Locations the player arrived at this turn appear in the Interacted Entities This Turn list. For each of those, write a memory from the location's perspective describing the arrival.
+Also write a location memory when a notable event occurs there: a fight, a discovery, a contract sealed, a body found, an object destroyed, a confrontation.
 
 Do NOT write a location memory for:
 - Pure observation turns that changed nothing.

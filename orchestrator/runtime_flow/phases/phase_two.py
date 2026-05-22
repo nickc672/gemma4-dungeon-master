@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence
 from ..turn_context import TurnContext
 from ..turn_heuristics import _PHASE_2_TOOL_NAME_PATTERN, _extract_labeled_line
-from .finalize_validators import compute_phase_two_writes_issues
 
 
 @dataclass
@@ -216,24 +215,6 @@ class Phase2Runner:
                     '{"writes_summary": "<short summary of writes applied>"}. '
                     "Do not call any other tools first."
                 )
-            if already_fired:
-                return None
-
-            issues = compute_phase_two_writes_issues(
-                turn_ctx=turn_ctx,
-                player_input=player_input,
-                finalize_payload=finalize_payload,
-                game_state=game_state,
-                find_world_object=self.find_world_object,
-            )
-
-            if issues:
-                turn_ctx.finalize_writes = None
-                return (
-                    "Writes incomplete - fix before finalizing:\n"
-                    + "\n".join(f"- {issue}" for issue in issues)
-                )
-
             return None
 
         if self.adapter.verbose:

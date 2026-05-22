@@ -4,7 +4,6 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 import json
 import re
 from ..turn_context import TurnContext
-from .finalize_validators import compute_missing_memory_retrievals, format_memory_retrieval_nudge
 from ..turn_heuristics import _extract_labeled_line, _mentions_unresolved_roll_request, _turn_has_resolved_roll, _tool_call_succeeded
 
 
@@ -249,25 +248,7 @@ class Phase1Runner:
                     "blocked_reason instead of leaving it empty. Do not "
                     "call any other tools first."
                 )
-
-            if already_fired:
-                return None
-
-            finalize_payload_local = turn_ctx.finalize or {}
-            missing_npcs, missing_locations = compute_missing_memory_retrievals(
-                turn_ctx=turn_ctx,
-                state=state,
-                player_input=player_input,
-                game_state=game_state,
-                finalize_payload=finalize_payload_local,
-                find_world_object=self.find_world_object,
-            )
-
-            if not missing_npcs and not missing_locations:
-                return None
-
-            turn_ctx.finalize = None
-            return format_memory_retrieval_nudge(missing_npcs, missing_locations)
+            return None
 
         loop_result = self.adapter.run_tool_loop(
             stage="phase_one",

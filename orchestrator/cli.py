@@ -26,6 +26,7 @@ class VerboseConfig:
     changes: bool = True
     state_snapshot: bool = False
     prompts: bool = False
+    narrate_memories: bool = True
     thinking: bool = False
     assistant_text: bool = False
     tool_ids: bool = False
@@ -41,6 +42,7 @@ class VerboseConfig:
 #   changes         - every entity/item/location that changed this turn
 #   state_snapshot  - full state block before and after (beat, connections, session summary, all scene fields)
 #   prompts         - full prompt text sent to each phase
+#   narrate_memories- just the Surfaced Memories block from the narration prompt
 #   thinking        - model extended-thinking blocks
 #   assistant_text  - assistant Decision Summary lines between tool calls
 #   tool_ids        - tool call IDs in the tool output lines
@@ -401,7 +403,18 @@ def print_llm_verbose(turn_number: int, trace: Dict[str, Any], cfg: VerboseConfi
                 print(f"  attempt {a.get('attempt')}: {truncate(str(a.get('error') or ''), 160)}")
         if cfg.prompts and narrate.get("prompt"):
             print(f"\n[NARRATE] PROMPT:\n{narrate['prompt']}\n")
-
+        if cfg.narrate_memories and narrate.get("prompt"):
+            prompt_text = str(narrate["prompt"])
+            # Surfaced Memories header
+            marker = "# Surfaced Memories"
+            start = prompt_text.find(marker)
+            if start >= 0:
+                rest = prompt_text[start:]
+                end_marker = rest.find("\n# ", len(marker))
+                section = rest[:end_marker] if end_marker > 0 else rest
+                print(f"\n[NARRATE] {section.rstrip()}\n")
+            else:
+                print("\n[NARRATE] # Surfaced Memories\n(none surfaced this turn)\n")
         if cfg.raw_messages:
             _print_raw_messages("NARRATE", narrate)
 

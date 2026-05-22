@@ -17,6 +17,34 @@ from .tool_runtime import (
 
 HISTORY_CHECK_BASE_DC = 5
 HISTORY_CHECK_DC_PER_HOP = 3
+CHECK_CAN_INTERACT_MEMORY_PREVIEW_COUNT = 10 # Number of stored memory sentences attached to a successful check_can_interact result.
+
+
+def _memory_preview_lines(entity: Any, limit: int = CHECK_CAN_INTERACT_MEMORY_PREVIEW_COUNT) -> list[str]:
+    """Return up to the limit of trailing memory sentences for an entity, oldest-first."""
+    if entity is None:
+        return []
+    raw = list(getattr(getattr(entity, "memory", None), "sentences", []) or [])
+    cleaned = [str(line).strip() for line in raw if str(line).strip()]
+    if not cleaned:
+        return []
+    if limit and limit > 0:
+        cleaned = cleaned[-int(limit):]
+    return cleaned
+
+
+def _augment_success_with_memory(result: dict, entity: Any) -> dict:
+    """
+    Attach the resolved entity's identity and a short memory preview to a successful check_can_interact result.
+    The memory preview is what feeds the narration prompt. 
+    The entity_key and entity_name fields let the narration prompt builder deduplicate memories across multiple Phase 1 lookups.
+    """
+    if entity is None:
+        return result
+    result["entity_key"] = entity.key
+    result["entity_name"] = entity.name
+    result["entity_memory"] = _memory_preview_lines(entity)
+    return result
 
 
 def _request_manual_history_roll(game_state: GameState, dc: int, context: str) -> int | None:
@@ -131,21 +159,21 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
         if current_location is None:
             return {"success": False, "can_interact": False, "reason": "Invalid player location"}
         if location.key == player_loc:
-            return {
+            return _augment_success_with_memory({
                 "success": True,
                 "can_interact": True,
                 "entity_type": location.type,
                 "reason": "You are already at this location.",
                 "path": [player_loc],
-            }
+            }, location)
         if location.key in current_location.connections:
-            return {
+            return _augment_success_with_memory({
                 "success": True,
                 "can_interact": True,
                 "entity_type": location.type,
                 "reason": f"{location.key} is directly adjacent to {player_loc}.",
                 "path": [player_loc, location.key],
-            }
+            }, location)
 
         # Non-adjacent. If the destination itself has been visited before,
         # the player already knows the way, no History check needed. We
@@ -159,7 +187,7 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
                 game_state.visited_locations,
             )
             if route is not None and len(route) >= 2:
-                return {
+                return _augment_success_with_memory({
                     "success": True,
                     "can_interact": True,
                     "entity_type": location.type,
@@ -169,7 +197,7 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
                         f"{' -> '.join(route)}. No History check required."
                     ),
                     "path": list(route),
-                }
+                }, location)
             # unlikely, but if destination is in visited_locations but no path
             # through visited intermediates connects it.
             return {
@@ -233,7 +261,7 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
         )
         if history_check.get("success"):
             roll_total = check_entry.get("total")
-            return {
+            return _augment_success_with_memory({
                 "success": True,
                 "can_interact": True,
                 "entity_type": location.type,
@@ -244,7 +272,7 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
                 ),
                 "path": list(route),
                 "history_check": history_summary,
-            }
+            }, location)
         roll_total = check_entry.get("total")
         return {
             "success": True,
@@ -270,12 +298,12 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
                 "reason": "The player cannot interact with themselves as a separate target.",
             }
         if entity.location == player_loc:
-            return {
+            return _augment_success_with_memory({
                 "success": True,
                 "can_interact": True,
                 "entity_type": entity.entity_type,
                 "reason": f"{entity.key} is here.",
-            }
+            }, entity)
         return {
             "success": True,
             "can_interact": False,
@@ -286,21 +314,21 @@ def check_can_interact(entity_key: str = "", game_state: GameState | None = None
     item = model.get_item(entity_key)
     if item is not None:
         if item.is_at_location(player_loc):
-            return {
+            return _augment_success_with_memory({
                 "success": True,
                 "can_interact": True,
                 "entity_type": item.type,
                 "reason": f"{item.key} is here.",
-            }
+            }, item)
         if item.holder_kind == "entity":
             holder = model.get_entity(item.holder_key)
             if holder is not None and holder.location == player_loc:
-                return {
+                return _augment_success_with_memory({
                     "success": True,
                     "can_interact": True,
                     "entity_type": item.type,
                     "reason": f"{item.key} is being carried by {holder.key}.",
-                }
+                }, item)
         return {
             "success": True,
             "can_interact": False,
@@ -600,6 +628,8 @@ VALIDATE_TOOLS = [
         "function": {
             "name": "check_can_interact",
             "description": (
+                "This tool is used for checking if the player can interact with"
+                "any person, place, or thing. This tool is likely used every turn."
                 "Check if the player can interact with an entity or travel to a "
                 "location. For locations: returns can_interact=True if the target "
                 "is the current location or directly adjacent. For non-adjacent "
@@ -608,7 +638,11 @@ VALIDATE_TOOLS = [
                 "hop) to see if the player remembers the way. Use this before "
                 "narrating any movement or interaction. If the target does not "
                 "exist in the world model, the result will include unresolved_target "
-                "so Phase 2 can create it if the narration describes a real interaction."
+                "so Phase 2 can create it if the narration describes a real interaction. "
+                "On any successful check (can_interact=True), the target's recent "
+                "memory is automatically attached to the result and forwarded to "
+                "the narrator; no separate retrieve_memory_tool call is needed for "
+                "entities, items, or locations confirmed reachable by this tool."
             ),
             "parameters": {
                 "type": "object",
@@ -680,6 +714,7 @@ SCENE_TOOL_DEFINITIONS = [
 
 
 __all__ = [
+    "CHECK_CAN_INTERACT_MEMORY_PREVIEW_COUNT",
     "HISTORY_CHECK_BASE_DC",
     "HISTORY_CHECK_DC_PER_HOP",
     "SCENE_TOOL_DEFINITIONS",

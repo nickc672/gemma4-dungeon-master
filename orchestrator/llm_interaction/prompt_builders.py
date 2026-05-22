@@ -48,6 +48,7 @@ class PromptConfig:
     narrate_story_status     - story/status paragraph (for tone)
     narrate_session_recap    - multi-turn condensed recap
     narrate_recent_conversation - last N lines of exchange (for continuity)
+    narrate_surfaced_memories - recent memories of entities/items/locations that Phase 1 looked at via check_can_interact or retrieve_memory_tool
 
     Phase 2 (writer prompt)
     p2_scene                 - current scene snapshot (pre-write)
@@ -55,6 +56,7 @@ class PromptConfig:
     p2_player_location_before - where the player was before this turn
     p2_unresolved_targets    - targets Phase 1 could not resolve in check_can_interact
     p2_location_memory       - prior memory sentences stored on the current location (the "scene roster" of pre-described characters / items)
+    p2_interacted_entities   - hint list of entities the player directly engaged with this turn (Player + successful check_can_interact targets), used as guidance for which entities to write memories on
     """
 
     # Phase 1
@@ -73,6 +75,7 @@ class PromptConfig:
     narrate_story_status: bool = True
     narrate_session_recap: bool = False
     narrate_recent_conversation: bool = True
+    narrate_surfaced_memories: bool = True
 
     # Phase 2
     p2_scene: bool = True
@@ -80,6 +83,7 @@ class PromptConfig:
     p2_player_location_before: bool = True
     p2_unresolved_targets: bool = True
     p2_location_memory: bool = True
+    p2_interacted_entities: bool = True
 
 
 DEFAULT_PROMPT_CONFIG = PromptConfig()
@@ -137,6 +141,125 @@ def _format_tool_call_log(tool_calls: list[dict] | None) -> str:
             entry += f" - {reason}"
         lines.append(entry)
     return "\n".join(lines)
+
+
+def _format_surfaced_memories_block(phase_one_tool_calls: list[dict] | None) -> str:
+    """
+    Build the 'Surfaced Memories' block for the narration prompt.
+
+    Walks the Phase 1 tool call log and pulls memory out of two tool result shapes:
+    - check_can_interact: when can_interact is True, 
+      the result carries entity_key, entity_name, entity_type, and entity_memory (a list of recent memory sentences).
+    - retrieve_memory_tool: when success is True and the target was off-scene,
+      the result carries entity_key, entity_name, entity_type, and memories (a list of {sentence, score} dicts).
+
+    Both are folded into the same block.
+    Entries are deduplicated by entity_key so a target the model checked more than once does not show up twice.
+    Returns an empty string if no memory was surfaced this turn.
+    """
+    if not phase_one_tool_calls:
+        return ""
+
+    seen_keys: set[str] = set()
+    blocks: list[str] = []
+
+    for call in phase_one_tool_calls:
+        name = call.get("name")
+        if name not in ("check_can_interact", "retrieve_memory_tool"):
+            continue
+        result = call.get("result") or {}
+
+        # Both tools use `success` as the run-ok flag.
+        if not result.get("success", True):
+            continue
+
+        # check_can_interact only carries memory on a positive check.
+        if name == "check_can_interact" and not result.get("can_interact"):
+            continue
+
+        entity_key = str(result.get("entity_key") or "").strip()
+        if not entity_key or entity_key in seen_keys:
+            continue
+
+        memory_lines: list[str] = []
+        for line in result.get("entity_memory") or []:
+            text = str(line).strip()
+            if text:
+                memory_lines.append(text)
+        for hit in result.get("memories") or []:
+            if isinstance(hit, dict):
+                text = str(hit.get("sentence") or "").strip()
+            else:
+                text = str(hit).strip()
+            if text:
+                memory_lines.append(text)
+
+        if not memory_lines:
+            continue
+
+        seen_keys.add(entity_key)
+        entity_name = str(result.get("entity_name") or entity_key).strip()
+        entity_type = str(result.get("entity_type") or "").strip()
+        header = f"## {entity_name}" + (f" ({entity_type})" if entity_type else "")
+        memory_block = "\n".join(f"- {line}" for line in memory_lines)
+        blocks.append(f"{header}\n{memory_block}")
+
+    if not blocks:
+        return ""
+    return "# Surfaced Memories\n" + "\n\n".join(blocks)
+
+
+def _format_interacted_entities_block(phase_one_tool_calls: list[dict] | None) -> str:
+    """
+    Build the 'Interacted Entities This Turn' block for the Phase 2 prompt.
+
+    Lists every entity (location, NPC, item) that the player engaged with this turn.
+    The Player is always listed first.
+    The remaining entries come from successful check_can_interact calls (can_interact=True) in the Phase 1 tool log, deduplicated by entity_key.
+
+    retrieve_memory_tool results are deliberately excluded.
+    Those targets are off-scene references the player asked about indirectly.
+    The player did not interact with them, so they are not memory-write candidates.
+
+    The block is informational, not an enforcement thing.
+    Phase 2 reads it as a hint about which entities deserve a write_memory_tool call, alongside the narration.
+    The model is still free to skip any entity that does not warrant a memory write.
+    """
+    rows: list[str] = ["- Player (player)"]
+    seen_keys: set[str] = {"Player"}
+
+    for call in phase_one_tool_calls or []:
+        if call.get("name") != "check_can_interact":
+            continue
+        result = call.get("result") or {}
+        if not result.get("success", True):
+            continue
+        if not result.get("can_interact"):
+            continue
+        entity_key = str(result.get("entity_key") or "").strip()
+        if not entity_key or entity_key in seen_keys:
+            continue
+        seen_keys.add(entity_key)
+        entity_name = str(result.get("entity_name") or entity_key).strip()
+        entity_type = str(result.get("entity_type") or "").strip()
+        reason = str(result.get("reason") or "").strip()
+        suffix = f" ({entity_type})" if entity_type else ""
+        line = f"- {entity_name}{suffix}"
+        if reason:
+            line += f" - {reason}"
+        rows.append(line)
+
+    body = "\n".join(rows)
+    return (
+        "# Interacted Entities This Turn\n"
+        "Each entity below was the player's direct interaction target this turn (the Player is always included)." 
+        "Use this list as a hint for where write_memory_tool calls are likely warranted:"
+        "typically the Player, plus any NPC the player addressed or any location the player arrived at,"
+        "plus any item the player handled." 
+        "Skip entries that the narration shows were not actually engaged with." 
+        "This is guidance, not a requirement.\n"
+        f"{body}"
+    )
 
 
 def _scene_snapshot_block(
@@ -262,6 +385,11 @@ def build_narrate_prompt(
             f"# Recent Conversation\n{_recent_history(state.history_text, limit_lines=6)}"
         )
 
+    if cfg.narrate_surfaced_memories:
+        surfaced_block = _format_surfaced_memories_block(phase_one_tool_calls)
+        if surfaced_block:
+            sections.append(surfaced_block)
+
     action_summary = ""
     if action_results:
         lines = []
@@ -355,6 +483,9 @@ def build_phase_two_prompt(
     sections.append(
         f"# Phase 1 Mechanics Results (rolls, checks)\n" + "\n".join(action_lines)
     )
+
+    if cfg.p2_interacted_entities:
+        sections.append(_format_interacted_entities_block(phase_one_tool_calls))
 
     # any targets Phase 1 attempted to resolve but could not find.
     # Phase 2 uses this list to decide whether to create_npc / create_item should
