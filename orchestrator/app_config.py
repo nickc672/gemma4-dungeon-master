@@ -9,8 +9,7 @@ from typing import Any
 
 CONFIG_PATH_ENV_VAR = "DMC_CONFIG_PATH"
 _DEFAULT_CONFIG_PATH = Path(__file__).with_name("app_config.json")
-
-SUPPORTED_PROVIDERS = ("ollama", "openai", "anthropic")
+SUPPORTED_PROVIDERS = ("ollama",)
 
 
 @lru_cache(maxsize=1)
@@ -58,15 +57,18 @@ def _get_provider_section(provider: str) -> dict[str, Any]:
     return section
 
 
-# ---------------------------------------------------------------------------
-# Provider-agnostic helpers (primary API)
-# ---------------------------------------------------------------------------
-
 def get_default_provider() -> str:
-    """Return the name of the configured default LLM provider."""
+    """
+    Return the name of the configured default LLM provider.
+    """
     name = str(_get_llm_section().get("default_provider", "ollama")).strip().lower()
     if not name:
         raise ValueError("Config key 'llm.default_provider' must be a non-empty string")
+    if name != "ollama":
+        raise ValueError(
+            f"Config key 'llm.default_provider' must be 'ollama'. "
+            f"Got: '{name}'. This build Ollama models only "
+        )
     return name
 
 

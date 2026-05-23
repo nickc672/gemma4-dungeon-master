@@ -7,14 +7,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
-from .app_config import get_default_model, get_default_provider, get_provider_names, get_roll_mode
+from .app_config import get_default_model, get_roll_mode
 from .runtime_flow.pipeline import StoryEngine
 from .runtime_flow.session_state import write_session_checkpoint
 from .world_state.tool_runtime import set_world_checkpoint_root
 from .world_state.world_model import build_world_model
 
-DEFAULT_PROVIDER = get_default_provider()
-DEFAULT_MODEL = get_default_model(DEFAULT_PROVIDER)
+DEFAULT_MODEL = get_default_model()
 DEFAULT_TRUNCATE_LIMIT = 200
 
 @dataclass
@@ -465,15 +464,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     defaults = _default_world_model()
 
     parser.add_argument(
-        "--provider",
-        default=DEFAULT_PROVIDER,
-        choices=get_provider_names(),
-        help="LLM provider: 'ollama' (local), 'openai', or 'anthropic'",
-    )
-    parser.add_argument(
         "--model",
         default=None,
-        help="Model ID for the selected provider (defaults to provider's configured default)",
+        help="Ollama tag for a Gemma 4 model variant (default: configured default in app_config.json)",
     )
 
     parser.add_argument(
@@ -535,8 +528,7 @@ def main() -> None:
     configured_roll_mode = get_roll_mode()
 
     engine = StoryEngine(
-        provider=args.provider,
-        model=args.model,  # None - StoryEngine picks the provider's default
+        model=args.model,
         verbose=args.verbose,
         starting_location=args.starting_location,
         starting_state=args.starting_state or world_defaults.starting_state,

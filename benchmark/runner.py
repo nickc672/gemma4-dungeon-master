@@ -59,15 +59,14 @@ def _preset_roll_provider(roll_value: int) -> Callable[[Dict[str, Any]], int]:
 def build_engine(
     model: str,
     *,
-    provider: str = "ollama",
     verbose: bool = False,
     roll_preset: int = DEFAULT_ROLL_PRESET,
 ) -> StoryEngine:
     """
-    Build a StoryEngine for the target model. Fresh per case for isolation.
+    Build a StoryEngine for the target Gemma 4 variant. Fresh per case
+    for isolation.
     """
     return StoryEngine(
-        provider=provider,
         model=model,
         verbose=verbose,
         roll_mode="manual",
@@ -157,12 +156,10 @@ class BenchmarkRunner:
         self,
         model: str,
         *,
-        provider: str = "ollama",
         verbose: bool = False,
         roll_preset: int = DEFAULT_ROLL_PRESET,
     ):
         self.model = model
-        self.provider = provider
         self.verbose = verbose
         self.roll_preset = int(roll_preset)
 
@@ -182,7 +179,6 @@ class BenchmarkRunner:
 
             engine = build_engine(
                 self.model,
-                provider=self.provider,
                 verbose=self.verbose,
                 roll_preset=_resolve_case_roll_value(case, self.roll_preset),
             )
@@ -258,10 +254,10 @@ class BenchmarkRunner:
 
             engine = build_engine(
                 self.model,
-                provider=self.provider,
                 verbose=self.verbose,
                 roll_preset=_resolve_case_roll_value(case, self.roll_preset),
             )
+
             configure_engine_for_case(engine, case)
 
             state = engine.state_builder.build(engine, case.player_input)
@@ -330,7 +326,6 @@ class BenchmarkRunner:
 
             engine = build_engine(
                 self.model,
-                provider=self.provider,
                 verbose=self.verbose,
                 roll_preset=_resolve_case_roll_value(case, self.roll_preset),
             )
@@ -434,7 +429,6 @@ ALL_TESTS = ["phase_one", "narration", "phase_two"]
 def benchmark_model(
     model: str,
     *,
-    provider: str = "ollama",
     tests: Optional[List[str]] = None,
     verbose: bool = False,
     roll_preset: int = DEFAULT_ROLL_PRESET,
@@ -443,14 +437,12 @@ def benchmark_model(
 
     print(f"\n{'='*60}")
     print(f"  Model: {model}")
-    print(f"  Provider: {provider}")
     print(f"  Tests: {tests}")
     print(f"  Roll preset: {roll_preset}")
     print(f"{'='*60}")
 
     runner = BenchmarkRunner(
         model=model,
-        provider=provider,
         verbose=verbose,
         roll_preset=roll_preset,
     )
@@ -481,7 +473,6 @@ def benchmark_model(
 
     return {
         "model": model,
-        "provider": provider,
         "timestamp": datetime.now().isoformat(),
         "total_elapsed_s": round(overall_elapsed, 2),
         "tests": test_results,
@@ -514,39 +505,29 @@ def _single_html_path(model: str, timestamp: str) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Orchestrator pipeline benchmark - runs one model at a time.",
+        description="Orchestrator pipeline benchmark - runs one Gemma 4 variant at a time.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
             "  # Run all three phase tests, save JSON + HTML\n"
-            "  python3 -m benchmark.runner --model gpt-oss:20b\n\n"
+            "  python3 -m benchmark.runner --model gemma4:31b\n\n"
             "  # JSON only\n"
-            "  python3 -m benchmark.runner --model llama3.1:8b --no-html\n\n"
+            "  python3 -m benchmark.runner --model gemma4:e4b --no-html\n\n"
             "  # Specific phases only\n"
-            "  python3 -m benchmark.runner --model gpt-oss:20b --tests phase_one narration\n\n"
-            "  # Different provider\n"
-            "  python3 -m benchmark.runner --model claude-3-5-sonnet-20241022 --provider anthropic\n"
+            "  python3 -m benchmark.runner --model gemma4:31b --tests phase_one narration\n\n"
+            "  # Smallest variant for a quick smoke test\n"
+            "  python3 -m benchmark.runner --model gemma4:e2b\n"
         ),
     )
-    parser.add_argument("--model", required=True,
-                        help="Model ID to benchmark (e.g. gpt-oss:20b for ollama)")
-    parser.add_argument("--provider", default="ollama",
-                        help="Provider name (default: ollama)")
-    parser.add_argument("--tests", nargs="*",
-                        choices=ALL_TESTS, default=None,
-                        help=f"Which phase tests to run (default: all -- {', '.join(ALL_TESTS)})")
-    parser.add_argument("--no-html", action="store_true",
-                        help="Skip the HTML report (JSON only)")
-    parser.add_argument("--verbose", action="store_true",
-                        help="Show detailed LLM output")
+    parser.add_argument("--model", required=True, help="Ollama tag for the Gemma 4 variant to benchmark (e.g. gemma4:31b)")
+    parser.add_argument("--tests", nargs="*", choices=ALL_TESTS, default=None, help=f"Which phase tests to run (default: all -- {', '.join(ALL_TESTS)})")
+    parser.add_argument("--no-html", action="store_true", help="Skip the HTML report (JSON only)")
+    parser.add_argument("--verbose", action="store_true", help="Show detailed LLM output")
     parser.add_argument("--roll-preset", type=int, default=DEFAULT_ROLL_PRESET,
                         help=(
-                            "d20 result returned for any skill_check or "
-                            "single-die roll_dice the model issues during a "
-                            "case. Must be in the range 1..20. Default: "
-                            f"{DEFAULT_ROLL_PRESET}. Lets the benchmark run "
-                            "unattended without terminal roll prompts and "
-                            "keeps scoring reproducible across runs."
+                            "d20 result returned for any skill_check or single-die roll_dice the model issues during a case."
+                            "Must be in the range 1..20. Default: "f"{DEFAULT_ROLL_PRESET}. Lets the benchmark run "
+                            "unattended without terminal roll prompts and keeps scoring reproducible across runs."
                         ))
     args = parser.parse_args()
 
@@ -560,7 +541,6 @@ def main() -> None:
     try:
         result = benchmark_model(
             model,
-            provider=args.provider,
             tests=active_tests,
             verbose=args.verbose,
             roll_preset=args.roll_preset,

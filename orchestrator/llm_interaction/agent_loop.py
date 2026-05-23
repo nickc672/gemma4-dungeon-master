@@ -5,8 +5,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence
-
-from .providers.base import LLMProvider, LLMResponse
+from .ollama import LLMProvider, LLMResponse
 
 logger = logging.getLogger(__name__)
 

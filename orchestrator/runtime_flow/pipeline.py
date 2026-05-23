@@ -127,14 +127,22 @@ class StoryEngine:
             self.roll_mode = "auto"
 
         resolved_provider = str(provider or get_default_provider()).strip().lower()
+        if resolved_provider != "ollama":
+            raise ValueError(
+                f"StoryEngine only supports the 'ollama' provider in this build. "
+                f"Got: '{resolved_provider}'. Gemma 4 runs locally via Ollama."
+            )
         resolved_model = model or get_default_model(resolved_provider)
 
+        # The api_key parameter is accepted for backwards-compatibility with
+        # callers that built engines for the multi-provider era. Ollama runs
+        # locally and needs no credentials, so the value is intentionally ignored.
+        _ = api_key
+
         from ..app_config import get_provider_config
-        from ..llm_interaction.providers.factory import create_provider
+        from ..llm_interaction.ollama import create_provider
 
         provider_config = dict(get_provider_config(resolved_provider))
-        if api_key:
-            provider_config["api_key"] = api_key
         llm_provider = create_provider(resolved_provider, provider_config)
 
         self.adapter = LLMAdapter(

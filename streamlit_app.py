@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime
@@ -12,11 +11,8 @@ import streamlit as st
 
 from orchestrator.app_config import (
     get_default_model,
-    get_default_provider,
-    get_model_choices as get_provider_model_choices,
     get_ollama_default_model,
     get_ollama_model_choices,
-    get_provider_names,
     get_roll_mode,
 )
 from orchestrator.runtime_flow.pipeline import StoryEngine
@@ -35,9 +31,7 @@ ENGINE_ERROR_MESSAGE = "The Dungeon Master is unavailable right now."
 
 @dataclass(frozen=True)
 class SessionConfig:
-    provider: str
     model: str
-    api_key: str
     story_key: str
     story_label: str
     world_model_data_dir: str
@@ -48,8 +42,6 @@ class SessionConfig:
     def reset_signature(self) -> str:
         return "|".join(
             [
-                self.provider.strip().lower(),
-                self.api_key.strip(),
                 self.story_key.strip().lower(),
                 self.world_model_data_dir.strip(),
                 self.starting_location.strip(),
@@ -96,9 +88,12 @@ def get_installed_ollama_models() -> list[str]:
     return models
 
 
-def get_model_choices(provider: str | None = None) -> list[str]:
-    if provider and provider != "ollama":
-        return list(get_provider_model_choices(provider))
+def get_model_choices() -> list[str]:
+    """
+    Return the Gemma 4 variants the dropdown should show. Starts with the
+    configured choices in app_config.json, then appends anything the local
+    Ollama daemon reports installed that we have not already listed.
+    """
     choices = get_ollama_model_choices()
     for installed_model in get_installed_ollama_models():
         if installed_model not in choices:
@@ -200,9 +195,7 @@ def streamlit_manual_roll_provider(request: dict[str, Any]) -> int:
 
 def initialize_session(config: SessionConfig) -> None:
     engine = StoryEngine(
-        provider=config.provider,
         model=config.model,
-        api_key=config.api_key or None,
         world_model_data_dir=config.world_model_data_dir,
         starting_location=config.starting_location,
         starting_state=config.starting_state,
@@ -225,8 +218,6 @@ def initialize_session(config: SessionConfig) -> None:
     st.session_state.turn_records = []
     st.session_state.config_signature = config.reset_signature()
     st.session_state.active_model = config.model
-    st.session_state._engine_provider = config.provider
-    st.session_state._engine_api_key = config.api_key
     st.session_state.active_story_key = config.story_key
     st.session_state.session_dir = str(session_dir)
     st.session_state.snapshot_files = []
@@ -249,75 +240,18 @@ def ensure_session(config: SessionConfig, *, reset_requested: bool) -> None:
         initialize_session(config)
 
 
-def sync_engine_provider_and_model(
-    engine: StoryEngine,
-    *,
-    provider: str,
-    api_key: str,
-    model: str,
-) -> None:
+def sync_engine_model(engine: StoryEngine, model: str) -> None:
     """
-    Hot-swap the live engine's provider, API key, and/or model when the
-    sidebar selection diverges from what the engine was initialized with.
-    Preserves chat history so the user doesn't lose state on every switch.
+    Hot-swap the Gemma 4 variant the live engine is using when the sidebar
+    selection changes. Preserves chat history so the user does not lose
+    state on every switch.
     """
-    provider = str(provider or "").strip().lower()
     model = str(model or "").strip()
-    api_key = str(api_key or "")
-
-    last_provider = str(st.session_state.get("_engine_provider", "")).strip().lower()
-    last_api_key = str(st.session_state.get("_engine_api_key", ""))
     last_model = str(st.session_state.get("active_model", "")).strip()
-
-    provider_changed = bool(last_provider) and last_provider != provider
-    api_key_changed = (
-        provider in {"openai", "anthropic"}
-        and last_api_key != api_key
-    )
-
-    if provider_changed or api_key_changed:
-        try:
-            from orchestrator.app_config import (
-                get_provider_config,
-                get_provider_default_options,
-                get_provider_stage_options,
-            )
-            from orchestrator.llm_interaction.providers.factory import create_provider
-
-            provider_config = dict(get_provider_config(provider))
-            if api_key:
-                provider_config["api_key"] = api_key
-            new_provider = create_provider(provider, provider_config)
-            engine.adapter.set_provider(
-                new_provider,
-                default_options=get_provider_default_options(provider),
-                stage_options=get_provider_stage_options(provider),
-            )
-            st.session_state._engine_provider = provider
-            st.session_state._engine_api_key = api_key
-            if provider_changed:
-                set_notice(f"Provider switched to '{provider}'. The next request will use it.")
-            elif api_key_changed:
-                set_notice(f"{provider.capitalize()} API key updated.")
-        except Exception as exc:
-            st.error(f"Failed to switch provider to '{provider}': {exc}")
-            return
-
     if model and model != last_model:
         engine.adapter.model = model
         st.session_state.active_model = model
-        if not provider_changed and not api_key_changed:
-            set_notice(f"Model changed to '{model}'. The next request will use it.")
-
-
-# Legacy alias — kept so any external callers continue to work.
-def sync_engine_model(engine: StoryEngine, model: str) -> None:
-    sync_engine_provider_and_model(
-        engine,
-        provider=str(st.session_state.get("_engine_provider", "")),
-        api_key=str(st.session_state.get("_engine_api_key", "")),
-        model=model,
-    )
+        set_notice(f"Model changed to '{model}'. The next request will use it.")
 
 
 def get_story_engine() -> StoryEngine:
@@ -350,54 +284,18 @@ def build_sidebar(story_sources: list[StorySource]) -> tuple[SessionConfig, Disp
             st.caption(story_source.description)
         st.caption(f"Story files: `{story_source.data_dir}`")
 
-        provider_choices = get_provider_names()
-        default_provider = get_default_provider()
-        selected_provider = st.session_state.get("provider_input", default_provider)
-        if selected_provider not in provider_choices:
-            selected_provider = default_provider
-        provider = st.selectbox(
-            "Provider",
-            options=provider_choices,
-            index=provider_choices.index(selected_provider),
-            key="provider_input",
-        ) or default_provider
-
-        # When the provider has changed since the engine was last initialized,
-        # any previously-selected model belongs to the old provider (e.g.
-        # "llama3.1:8b" left over from Ollama after switching to Anthropic).
-        # Drop the stale key so the model selectbox renders with the new
-        # provider's default rather than carrying invalid state forward.
-        last_engine_provider = str(st.session_state.get("_engine_provider", "")).strip().lower()
-        if last_engine_provider and last_engine_provider != provider:
-            st.session_state.pop("model_input", None)
-
-        _env_key_names = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
-        api_key = ""
-        if provider in _env_key_names:
-            env_var = _env_key_names[provider]
-            env_key = os.environ.get(env_var, "")
-            key_input = st.text_input(
-                f"{provider.capitalize()} API Key",
-                value=st.session_state.get(f"{provider}_api_key_input", env_key),
-                type="password",
-                key=f"{provider}_api_key_input",
-                placeholder=f"Loaded from {env_var}" if env_key else f"Paste your {env_var} here",
-            )
-            api_key = key_input.strip()
-            if not api_key and not env_key:
-                st.warning(f"No API key found. Set {env_var} or enter a key above.")
-
-        model_choices = get_model_choices(provider)
-        default_m = get_default_model(provider) if provider != "ollama" else get_ollama_default_model()
+        model_choices = get_model_choices()
+        default_m = get_ollama_default_model()
         selected_model = st.session_state.get("model_input", default_m)
         if selected_model not in model_choices:
             model_choices = [selected_model, *model_choices]
 
         model = st.selectbox(
-            "Model",
+            "Gemma 4 model",
             options=model_choices,
             index=model_choices.index(selected_model),
             key="model_input",
+            help="Pick a Gemma 4 variant. The 31B Dense default is the benchmark winner for this workload.",
         )
 
         default_roll_mode = get_roll_mode()
@@ -432,9 +330,7 @@ def build_sidebar(story_sources: list[StorySource]) -> tuple[SessionConfig, Disp
         show_debug_trace = st.checkbox("Show raw debug trace", value=False)
 
     config = SessionConfig(
-        provider=str(provider or default_provider).strip().lower(),
         model=str(model or "").strip(),
-        api_key=api_key,
         story_key=story_source.key,
         story_label=story_source.label,
         world_model_data_dir=str(story_source.data_dir),
@@ -1792,12 +1688,7 @@ def main() -> None:
     ensure_session(session_config, reset_requested=reset_requested)
 
     engine = get_story_engine()
-    sync_engine_provider_and_model(
-        engine,
-        provider=session_config.provider,
-        api_key=session_config.api_key,
-        model=session_config.model,
-    )
+    sync_engine_model(engine, session_config.model)
     try:
         engine.adapter.verbose = bool(display.show_debug_trace)
     except Exception:

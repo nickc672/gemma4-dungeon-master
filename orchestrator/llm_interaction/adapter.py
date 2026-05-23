@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Union
 from .agent_loop import AgentHooks, AgentLoop, AgentResult
 from .agent_loop import LLMError  # re-exported for call-sites that import it here
 from .agent_loop import DMC_ROLL_REQUIRED_SENTINEL  # noqa: F401 — re-exported sentinel
-from .providers.base import LLMProvider
+from .ollama import LLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -223,12 +223,12 @@ def _default_provider() -> LLMProvider:
     """
     try:
         from ..app_config import get_default_provider, get_provider_config
-        from .providers.factory import create_provider
+        from .ollama import create_provider
         name = get_default_provider()
         config = get_provider_config(name)
         return create_provider(name, config)
     except Exception:
-        from .providers.ollama import get_shared_instance
+        from .ollama import get_shared_instance
         return get_shared_instance()
 
 
