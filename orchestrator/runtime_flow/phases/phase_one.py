@@ -49,7 +49,7 @@ class Phase1Runner:
         adapter:            LLMAdapter (the tool-loop transport)
         execute_world_tool: callable(tool_name, args, game_state) -> result dict
         find_world_object:  callable(name, game_state) -> object or None
-        tool_defs:          list of OpenAI-style tool definitions to expose
+        tool_defs:          list of tool definitions
         tool_names:         iterable of allowed tool names (without finalize_turn)
         finalize_tool_def:  the finalize_turn tool definition
         system_prompt:      the Phase 1 system prompt

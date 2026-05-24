@@ -1,18 +1,23 @@
-fastmcp==2.*          # MCP helper
-pydantic==2.*         # models
-psycopg[binary]==3.*  # Postgres driver (no system libpq needed)
-streamlit==1.*        # UI
-wordfreq==3.*         # frequency dictionary
-nltk==3.*             # WordNet access
-rapidfuzz==3.*        # optional fuzzy matching
-pytest==9.*           # test runner
-faiss-cpu>=1.8.0,<2
-mcp==1.26.0
-numpy>=1.26,<3
-ollama==0.6.1
-openai>=1.30.0,<2     # OpenAI provider (set OPENAI_API_KEY to use)
-anthropic>=0.40.0,<1  # Anthropic provider (set ANTHROPIC_API_KEY to use)
-psycopg==3.3.2
-pydantic==2.12.5
-pytest==9.0.2
-streamlit==1.53.1
+# =====================================================================
+# Runtime dependencies for the orchestrator + benchmark
+# ---------------------------------------------------------------------
+# Python 3.10+ is required. The codebase uses PEP 604 union syntax
+# (e.g. `str | None`) and PEP 585 generic builtins (`list[str]`,
+# `dict[str, Any]`), neither of which work on 3.9 or earlier.
+#
+# Install with:
+#   python3 -m pip install -r requirements.txt
+#
+# Note: this installs the Ollama *Python client library*, not the
+# Ollama daemon itself. The daemon is a separate install from
+# https://ollama.com/download. After installing it, start the local
+# API and pull a model with:
+#   ollama serve
+#   ollama pull gemma4:31b
+# =====================================================================
+
+# Ollama Python client - the only third-party runtime import in the
+# codebase (used in ollama.py for the transport layer). Pinned to a
+# version with stable native tool-calling support, which the agent
+# loop in agent_loop.py relies on.
+ollama>=0.4.0

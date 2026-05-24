@@ -14,8 +14,10 @@ It plays single-player, text-only D&D-style adventures.
 When a player types something into the CLI demo or the Streamlit web UI,
 every response, dice roll, and change to the world goes through this folder.
 
-Every model call lands on your local machine. The system runs Gemma 4
-through Ollama, with no remote API in the loop.
+Every model call lands on your local machine through Ollama, with no remote
+API in the loop. The same orchestrator works with any Ollama-served model
+the host has installed (Gemma, Llama, Mistral, Phi, and so on); the
+system simply asks Ollama for whichever tag is currently configured.
 
 
 WHY IT'S BUILT THIS WAY
@@ -46,8 +48,8 @@ into three steps:
    any NPC/location the player interacted with.
    The step ends when the model calls "finalize_writes".
 
-The same Gemma 4 model handles all three phases. Per-phase sampling
-options ("stage_options" in app_config.json) keep Phase 1 and Phase 2
+The same model handles all three phases. Per-phase sampling options
+("stage_options" in app_config.json) keep Phase 1 and Phase 2
 low-temperature so tool calls stay disciplined, while bumping
 Narration's temperature so the prose has some life in it.
 
@@ -64,13 +66,13 @@ Files at the top of this folder:
 
 - "app_config.py"
     Reads "app_config.json" and validates it.
-    Anything that needs to know which Gemma 4 model to use, or whether dice
+    Anything that needs to know which model to use, or whether dice
     are manual or automatic, asks this file.
 
 - "app_config.json"
     The actual settings.
-    Default model is "gemma4:31b". The dropdown in the Streamlit sidebar
-    lists every Gemma 4 variant the project supports out of the box.
+    Holds the default model, the menu of model choices the UI shows,
+    the sampling options applied to each phase, and the roll mode.
 
 
 Subfolders:
@@ -95,7 +97,7 @@ HOW A TURN MOVES THROUGH THE CODE
 ==================================
 
 When the player types something and the engine starts processing it
-("pipeline.StoryEngine.advance_turn"):
+("pipeline.StoryEngine.run_turn"):
 
 1. "runtime_flow/state_builder.py" builds a "PromptState".
    This is a clean summary of the current world that can be dropped into a prompt.
@@ -139,15 +141,17 @@ THE CONFIGURATION FILE
 
 Everything user-facing about the model lives in "app_config.json".
 
-- "llm.default_provider"
-    Always "ollama". The system is locked to local execution and
-    "app_config.py" will refuse anything else.
+- "model.default"
+    The Ollama tag the engine uses by default if no override is passed
+    on the CLI or in the Streamlit sidebar.
 
-- "llm.providers.ollama.default_model" and "model_choices"
-    Which Gemma 4 variant to use by default, and the menu of variants the UI
-    dropdown should offer.
+- "model.choices"
+    The menu of model tags the UI dropdown should offer. The Streamlit
+    sidebar also appends anything else the local Ollama daemon reports
+    installed, so the dropdown grows automatically as the user pulls
+    new models.
 
-- "llm.providers.ollama.default_options" and "stage_options"
+- "model.default_options" and "model.stage_options"
     Sampling settings (temperature, top_p, num_ctx, and so on).
     "stage_options" lets each of the three phases override the defaults.
     Narration uses a higher temperature so the prose feels less robotic.

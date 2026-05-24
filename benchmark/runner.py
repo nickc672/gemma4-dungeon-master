@@ -12,7 +12,7 @@ from orchestrator.runtime_flow.reconciliation import build_runtime_state_snapsho
 from orchestrator.runtime_flow.phases import PhaseOneInput, NarrationInput, PhaseTwoInput
 from orchestrator.world_state.story import mark_location_visited
 from orchestrator.world_state.tools import bind_turn_orchestration_ctx, clear_turn_orchestration_ctx
-from .scenarios import PhaseOneCase, PHASE_ONE_CASES, NarrationCase, NARRATION_CASES, PhaseTwoCase, PHASE_TWO_CASES,
+from .scenarios import PhaseOneCase, PHASE_ONE_CASES, NarrationCase, NARRATION_CASES, PhaseTwoCase, PHASE_TWO_CASES
 from .metrics import Timer, score_phase_one, score_narration, score_phase_two, summarize_results
 # Make the orchestrator package importable when running as `python -m benchmark.runner`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -63,7 +63,7 @@ def build_engine(
     roll_preset: int = DEFAULT_ROLL_PRESET,
 ) -> StoryEngine:
     """
-    Build a StoryEngine for the target Gemma 4 variant. Fresh per case
+    Build a StoryEngine for the target model. Fresh per case
     for isolation.
     """
     return StoryEngine(
@@ -505,21 +505,21 @@ def _single_html_path(model: str, timestamp: str) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Orchestrator pipeline benchmark - runs one Gemma 4 variant at a time.",
+        description="Orchestrator pipeline benchmark - runs one model at a time.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
             "  # Run all three phase tests, save JSON + HTML\n"
             "  python3 -m benchmark.runner --model gemma4:31b\n\n"
             "  # JSON only\n"
-            "  python3 -m benchmark.runner --model gemma4:e4b --no-html\n\n"
+            "  python3 -m benchmark.runner --model llama3.1:8b --no-html\n\n"
             "  # Specific phases only\n"
-            "  python3 -m benchmark.runner --model gemma4:31b --tests phase_one narration\n\n"
-            "  # Smallest variant for a quick smoke test\n"
-            "  python3 -m benchmark.runner --model gemma4:e2b\n"
+            "  python3 -m benchmark.runner --model llama3.1:8b --tests phase_one narration\n\n"
+            "  # Smaller model for a quick smoke test\n"
+            "  python3 -m benchmark.runner --model phi4:14b\n"
         ),
     )
-    parser.add_argument("--model", required=True, help="Ollama tag for the Gemma 4 variant to benchmark (e.g. gemma4:31b)")
+    parser.add_argument("--model", required=True, help="Ollama tag for the model to benchmark (e.g. gemma4:31b, llama3.1:8b)")
     parser.add_argument("--tests", nargs="*", choices=ALL_TESTS, default=None, help=f"Which phase tests to run (default: all -- {', '.join(ALL_TESTS)})")
     parser.add_argument("--no-html", action="store_true", help="Skip the HTML report (JSON only)")
     parser.add_argument("--verbose", action="store_true", help="Show detailed LLM output")
@@ -547,7 +547,7 @@ def main() -> None:
         )
     except Exception as exc:
         print(f"\n[ERROR] Model '{model}' failed: {exc}")
-        result = {"error": str(exc), "model": model, "provider": args.provider}
+        result = {"error": str(exc), "model": model}
 
     json_path = _model_json_path(model, timestamp)
     json_path.write_text(json.dumps({model: result}, indent=2, default=str), encoding="utf-8")

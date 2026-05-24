@@ -100,9 +100,7 @@ class TurnContext:
     def unresolved_interaction_targets(self) -> List[Any]:
         return self.data.get("unresolved_interaction_targets", [])
 
-
-    # Roll mode and provider
-
+    # Roll mode and manual roll handler
     @property
     def roll_mode(self) -> str:
         return str(self.data.get("roll_mode") or "auto")

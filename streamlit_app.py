@@ -9,12 +9,7 @@ from typing import Any
 
 import streamlit as st
 
-from orchestrator.app_config import (
-    get_default_model,
-    get_ollama_default_model,
-    get_ollama_model_choices,
-    get_roll_mode,
-)
+from orchestrator.app_config import get_default_model, get_model_choices, get_roll_mode
 from orchestrator.runtime_flow.pipeline import StoryEngine
 from orchestrator.runtime_flow.session_state import BeatTracker, write_session_checkpoint
 from orchestrator.world_state.entity import DynamicSentenceMemory, Entity
@@ -88,13 +83,13 @@ def get_installed_ollama_models() -> list[str]:
     return models
 
 
-def get_model_choices() -> list[str]:
+def get_model_choices_with_installed() -> list[str]:
     """
-    Return the Gemma 4 variants the dropdown should show. Starts with the
+    Return the models the dropdown should show. Starts with the
     configured choices in app_config.json, then appends anything the local
     Ollama daemon reports installed that we have not already listed.
     """
-    choices = get_ollama_model_choices()
+    choices = get_model_choices()
     for installed_model in get_installed_ollama_models():
         if installed_model not in choices:
             choices.append(installed_model)
@@ -242,7 +237,7 @@ def ensure_session(config: SessionConfig, *, reset_requested: bool) -> None:
 
 def sync_engine_model(engine: StoryEngine, model: str) -> None:
     """
-    Hot-swap the Gemma 4 variant the live engine is using when the sidebar
+    Hot-swap the model the live engine is using when the sidebar
     selection changes. Preserves chat history so the user does not lose
     state on every switch.
     """
@@ -284,18 +279,18 @@ def build_sidebar(story_sources: list[StorySource]) -> tuple[SessionConfig, Disp
             st.caption(story_source.description)
         st.caption(f"Story files: `{story_source.data_dir}`")
 
-        model_choices = get_model_choices()
-        default_m = get_ollama_default_model()
+        model_choices = get_model_choices_with_installed()
+        default_m = get_default_model()
         selected_model = st.session_state.get("model_input", default_m)
         if selected_model not in model_choices:
             model_choices = [selected_model, *model_choices]
 
         model = st.selectbox(
-            "Gemma 4 model",
+            "Model",
             options=model_choices,
             index=model_choices.index(selected_model),
             key="model_input",
-            help="Pick a Gemma 4 variant. The 31B Dense default is the benchmark winner for this workload.",
+            help="Pick any Ollama model installed on the local machine. Locally installed models are appended to the list automatically.",
         )
 
         default_roll_mode = get_roll_mode()
@@ -320,7 +315,7 @@ def build_sidebar(story_sources: list[StorySource]) -> tuple[SessionConfig, Disp
                 key=f"starting_state_input_{story_source.key}",
             )
 
-        reset_requested = st.button("Reset Session With Current Setup", use_container_width=True)
+        reset_requested = st.button("Reset Session With Current Setup", width="stretch")
         st.caption("Model changes apply on the next request. Story selection and setup changes apply only after reset.")
         session_dir = str(st.session_state.get("session_dir") or "").strip()
         if session_dir:
@@ -580,9 +575,9 @@ def apply_world_model_to_engine(
     if target_location and model.get_location(target_location) is not None:
         sync_player_location(engine, target_location)
 
-    engine.game_state.discovered_keys.intersection_update(set(model.all_keys()))
+    engine.game_state.discovered_locations.intersection_update(set(model.locations.keys()))
     if engine.game_state.player_location:
-        engine.game_state.discovered_keys.add(engine.game_state.player_location)
+        engine.game_state.discovered_locations.add(engine.game_state.player_location)
     sync_npc_locations(engine)
     engine.world.sync_actor_inventories()
 
@@ -660,8 +655,8 @@ def sync_npc_locations(engine: StoryEngine) -> None:
 
 def sync_player_location(engine: StoryEngine, location_key: str) -> None:
     engine.game_state.player_location = str(location_key or "").strip()
-    engine.game_state.discovered_keys.add(engine.game_state.player_location)
-    engine.discovered_keys = engine.game_state.discovered_keys
+    engine.game_state.discovered_locations.add(engine.game_state.player_location)
+    engine.discovered_locations = engine.game_state.discovered_locations
     player = engine.world.get_entity("Player")
     if player is not None:
         player.set_location(engine.game_state.player_location)
@@ -729,7 +724,7 @@ def render_roll_panel() -> None:
             value=1,
             step=1,
         )
-        submitted = st.form_submit_button("Apply Roll", use_container_width=True)
+        submitted = st.form_submit_button("Apply Roll", width="stretch")
 
     if submitted:
         st.session_state.captured_manual_roll = int(roll_value)
@@ -891,7 +886,7 @@ def render_world_delta(reconciliation: dict[str, Any]) -> None:
         st.json(
             {
                 "story_status": story_status,
-                "discovered_keys": delta.get("discovered_keys") or {},
+                "discovered_locations": delta.get("discovered_locations") or {},
                 "quest_flag_changes": delta.get("quest_flag_changes") or [],
             },
             expanded=False,
@@ -988,7 +983,7 @@ def render_turn_inspector(display: DisplayOptions) -> None:
     with memory_tab:
         memory_rows = flatten_memory_delta(reconciliation)
         if memory_rows:
-            st.dataframe(memory_rows, use_container_width=True)
+            st.dataframe(memory_rows, width="stretch")
         else:
             st.info("No memory delta was detected for this turn.")
         if reconciliation.get("turn_memory"):
@@ -1015,7 +1010,7 @@ def render_world_graph(snapshot: dict[str, Any]) -> None:
         return
 
     with st.expander("World Graph", expanded=False):
-        st.graphviz_chart(build_world_state_dot(snapshot), use_container_width=True)
+        st.graphviz_chart(build_world_state_dot(snapshot), width="stretch")
 
 
 def render_debug_trace(display: DisplayOptions) -> None:
@@ -1080,7 +1075,7 @@ def render_story_authoring(engine: StoryEngine) -> None:
                 key="story_authoring_move_player_to_start",
                 help="Use this when the authored starting location should become the current live location.",
             )
-            submitted = st.form_submit_button("Apply Story Changes", use_container_width=True)
+            submitted = st.form_submit_button("Apply Story Changes", width="stretch")
 
         if submitted:
             beats = parse_text_lines(beat_list_text)
@@ -1153,8 +1148,8 @@ def render_data_characteristics(engine: StoryEngine) -> None:
         },
         {
             "domain": "runtime",
-            "records": len(engine.game_state.discovered_keys),
-            "fields": "player_location, discovered_keys, quest_flags, story_status, summary, current beat",
+            "records": len(engine.game_state.discovered_locations),
+            "fields": "player_location, discovered_locations, quest_flags, story_status, summary, current beat",
             "authorable_now": "yes, live session only",
             "should_add": "named milestones, journal entries, authored flag definitions",
         },
@@ -1166,7 +1161,7 @@ def render_data_characteristics(engine: StoryEngine) -> None:
             "should_add": "source/type, confidence, visibility, chronology, expiration/pinning",
         },
     ]
-    st.dataframe(rows, use_container_width=True)
+    st.dataframe(rows, width="stretch")
 
     st.markdown("**Current Story Shape**")
     st.json(
@@ -1202,7 +1197,7 @@ def render_bulk_world_model_editor(engine: StoryEngine) -> None:
             value=False,
             key="bulk_world_model_move_player_to_start",
         )
-        submitted = st.form_submit_button("Validate And Replace World Model", use_container_width=True)
+        submitted = st.form_submit_button("Validate And Replace World Model", width="stretch")
 
     if submitted:
         try:
@@ -1235,7 +1230,7 @@ def render_bulk_world_model_editor(engine: StoryEngine) -> None:
     st.divider()
     save_col, checkpoint_col = st.columns(2)
     with save_col:
-        if st.button("Save Current World Model To Source Files", use_container_width=True):
+        if st.button("Save Current World Model To Source Files", width="stretch"):
             try:
                 engine.world.save(source_dir)
             except Exception as exc:
@@ -1244,7 +1239,7 @@ def render_bulk_world_model_editor(engine: StoryEngine) -> None:
                 set_notice(f"World model saved to {source_dir}.")
                 st.rerun()
     with checkpoint_col:
-        if st.button("Write Session Checkpoint", use_container_width=True):
+        if st.button("Write Session Checkpoint", width="stretch"):
             session_dir = str(st.session_state.get("session_dir") or "").strip()
             if not session_dir:
                 st.error("No session directory is active.")
@@ -1289,11 +1284,11 @@ def render_runtime_editor(engine: StoryEngine) -> None:
             height=140,
             help="One summary event per line.",
         )
-        discovered_keys_text = st.text_area(
-            "Discovered keys",
-            value=format_lines(sorted(engine.game_state.discovered_keys)),
+        discovered_locations_text = st.text_area(
+            "Discovered locations",
+            value=format_lines(sorted(engine.game_state.discovered_locations)),
             height=140,
-            help="One key per line.",
+            help="One location key per line.",
         )
         quest_flags_text = st.text_area(
             "Quest flags (JSON)",
@@ -1310,7 +1305,7 @@ def render_runtime_editor(engine: StoryEngine) -> None:
         else:
             beat_index = None
             st.write("No beats are configured for this session.")
-        submitted = st.form_submit_button("Apply Runtime Changes", use_container_width=True)
+        submitted = st.form_submit_button("Apply Runtime Changes", width="stretch")
 
     if not submitted:
         return
@@ -1321,10 +1316,10 @@ def render_runtime_editor(engine: StoryEngine) -> None:
         st.error(str(exc))
         return
 
-    discovered_keys = set(parse_token_list(discovered_keys_text))
-    discovered_keys.add(player_location)
-    engine.game_state.discovered_keys.clear()
-    engine.game_state.discovered_keys.update(discovered_keys)
+    discovered_locations = set(parse_token_list(discovered_locations_text))
+    discovered_locations.add(player_location)
+    engine.game_state.discovered_locations.clear()
+    engine.game_state.discovered_locations.update(discovered_locations)
     sync_player_location(engine, player_location)
     engine.story_status = story_status.strip()
     engine.summary.events = parse_text_lines(session_summary)
@@ -1367,7 +1362,7 @@ def render_location_editor(engine: StoryEngine) -> None:
                 height=100,
                 help="One tag per line.",
             )
-            submitted = st.form_submit_button("Apply Location Changes", use_container_width=True)
+            submitted = st.form_submit_button("Apply Location Changes", width="stretch")
 
         if submitted:
             connections = parse_token_list(connections_text)
@@ -1441,7 +1436,7 @@ def render_entity_editor(engine: StoryEngine) -> None:
                 height=140,
                 help="One memory line per line.",
             )
-            submitted = st.form_submit_button("Apply Entity Changes", use_container_width=True)
+            submitted = st.form_submit_button("Apply Entity Changes", width="stretch")
 
         if submitted:
             try:
@@ -1520,7 +1515,7 @@ def render_item_editor(engine: StoryEngine) -> None:
                 height=100,
                 help="One tag per line.",
             )
-            submitted = st.form_submit_button("Apply Item Changes", use_container_width=True)
+            submitted = st.form_submit_button("Apply Item Changes", width="stretch")
 
         if submitted:
             item.name = name.strip() or item.key
@@ -1584,7 +1579,7 @@ def render_memory_browser(engine: StoryEngine) -> None:
         else:
             results = search_memory_rows(engine, scope=scope, query=query, top_n=top_n)
             if results:
-                st.dataframe(results, use_container_width=True)
+                st.dataframe(results, width="stretch")
             else:
                 st.write("No memory hits matched this query.")
 
@@ -1607,11 +1602,11 @@ def render_memory_browser(engine: StoryEngine) -> None:
         )
 
         if selected_entity == "__all__":
-            st.dataframe(memory_rows, use_container_width=True)
+            st.dataframe(memory_rows, width="stretch")
         else:
             entity_rows = collect_memory_rows(engine, entity_key=selected_entity)
             if entity_rows:
-                st.dataframe(entity_rows, use_container_width=True)
+                st.dataframe(entity_rows, width="stretch")
             else:
                 st.write("This entity has no stored memory rows.")
 
@@ -1639,12 +1634,12 @@ def render_snapshot_browser(engine: StoryEngine, display: DisplayOptions) -> Non
         st.markdown("**Story Record**")
         st.json(engine.world.story_record(), expanded=False)
         st.markdown("**Locations**")
-        st.dataframe(engine.world.list_location_records(), use_container_width=True)
+        st.dataframe(engine.world.list_location_records(), width="stretch")
         st.markdown("**Entities**")
         entity_rows = [engine.world.get_entity(key).to_public_view() for key in sorted_entity_keys(engine)]
-        st.dataframe(entity_rows, use_container_width=True)
+        st.dataframe(entity_rows, width="stretch")
         st.markdown("**Items**")
-        st.dataframe(engine.world.list_item_records(), use_container_width=True)
+        st.dataframe(engine.world.list_item_records(), width="stretch")
 
     with snapshot_tab:
         st.markdown("**Runtime Snapshot**")

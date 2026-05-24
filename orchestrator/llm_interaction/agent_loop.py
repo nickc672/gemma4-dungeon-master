@@ -5,7 +5,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence
-from .ollama import LLMProvider, LLMResponse
+from .ollama import LLMResponse, OllamaClient
 
 logger = logging.getLogger(__name__)
 
@@ -64,24 +64,21 @@ class AgentResult:
 
 class AgentLoop:
     """
-    Provider-agnostic REACT-style agent loop.
+    REACT-style agent loop.
 
-    Mirrors the observe → think → act → observe cycle used in tools like
+    Mirrors the observe -> think -> act -> observe cycle used in tools like
     Claude Code and Copilot Chat:
 
-        1. Send the current conversation to the LLM provider.
+        1. Send the current conversation to the LLM.
         2. If the model requests tool calls, execute them and append results.
         3. If the model produces a plain text response, run optional stop
            hooks; if none block it, return the final answer.
         4. Repeat up to max_iterations.
-
-    All transport is delegated to an LLMProvider implementation, keeping
-    this class free of provider-specific logic.
     """
 
     def __init__(
         self,
-        provider: LLMProvider,
+        client: OllamaClient,
         *,
         model: str,
         default_options: Optional[Dict[str, Any]] = None,
@@ -89,7 +86,7 @@ class AgentLoop:
         max_attempts: int = 3,
         verbose: bool = False,
     ) -> None:
-        self.provider = provider
+        self.client = client
         self.model = model
         self.default_options = dict(default_options or {})
         self.stage_options = dict(stage_options or {})
@@ -115,7 +112,7 @@ class AgentLoop:
             if self.verbose:
                 print(f"[LLM] {stage} transport attempt {attempt}")
             try:
-                return self.provider.chat(
+                return self.client.chat(
                     model=self.model,
                     messages=messages,
                     tools=tools or [],
@@ -147,7 +144,7 @@ class AgentLoop:
             if self.verbose:
                 print(f"[LLM] {stage} text attempt {attempt}")
             try:
-                response = self.provider.chat(
+                response = self.client.chat(
                     model=self.model,
                     messages=messages,
                     options=self._options(stage),
@@ -250,7 +247,7 @@ class AgentLoop:
                     })
                     continue
 
-            # No tool calls → model wants to stop
+            # No tool calls -> model wants to stop
             if not tool_calls:
                 stop_reason = hooks.stop_hook(assistant_text, stop_hook_active) if hooks.stop_hook else None
                 if stop_reason:

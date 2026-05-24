@@ -1,29 +1,24 @@
 from __future__ import annotations
 
 """
-Local Ollama provider for Gemma 4.
+Local Ollama transport.
 
-This single module is the entire LLM-transport layer. It owns:
+This module owns the entire LLM transport layer:
 
 - The shared types every other module in `llm_interaction/` is written
-  against (`LLMProvider`, `LLMResponse`, `ToolCall`).
-- The concrete `OllamaProvider` class that talks to a local Ollama
-  daemon over its native Python client.
+  against (`LLMResponse`, `ToolCall`).
+- The concrete `OllamaClient` class that talks to a local Ollama daemon
+  over its native Python client.
 - The canonical-to-native message translation and response parsing
   helpers. Anything Ollama-specific stays inside this file.
-- A per-process singleton accessor and a `create_provider` factory
-  kept for backwards-compatibility with call-sites that still ask
-  for "the provider named ollama".
-
-The system runs Gemma 4 locally. There is one provider on purpose,
-and this is it.
+- A per-process singleton accessor used by `adapter.py`.
 """
 
 import json
 import logging
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
 import ollama
 from ollama import ResponseError
@@ -32,12 +27,12 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Shared types — every other module in llm_interaction/ is written against these
+# Shared types - every other module in llm_interaction/ is written against these
 # ---------------------------------------------------------------------------
 
 @dataclass
 class ToolCall:
-    """Normalized tool call returned by the provider."""
+    """Normalized tool call returned by the model."""
     id: str
     name: str
     arguments: dict[str, Any]
@@ -52,7 +47,7 @@ class LLMResponse:
 
 
 # Canonical internal message format used by AgentLoop.
-# The provider translates to/from this format.
+# The transport translates to/from this format.
 #
 # System:    {"role": "system",    "content": str}
 # User:      {"role": "user",      "content": str}
@@ -61,38 +56,18 @@ class LLMResponse:
 # Tool:      {"role": "tool",      "tool_call_id": str, "tool_name": str, "content": str}
 
 
-@runtime_checkable
-class LLMProvider(Protocol):
-    """
-    Protocol the rest of `llm_interaction/` is written against.
-
-    Even though there is only one concrete implementation today
-    (`OllamaProvider`), the protocol stays so `agent_loop.py` and
-    `adapter.py` do not need to know any wire-format details.
-    """
-
-    def chat(
-        self,
-        *,
-        model: str,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
-        options: dict[str, Any] | None = None,
-    ) -> LLMResponse: ...
-
-
 def serialize_arguments(arguments: dict[str, Any]) -> str:
     """Stable JSON serialization for tool-call arguments."""
     return json.dumps(arguments, separators=(",", ":"), ensure_ascii=True)
 
 
 # ---------------------------------------------------------------------------
-# OllamaProvider — the only concrete LLMProvider in this project
+# OllamaClient
 # ---------------------------------------------------------------------------
 
-class OllamaProvider:
+class OllamaClient:
     """
-    LLM provider backed by a local Ollama instance.
+    Talks to a local Ollama instance.
 
     A class-level lock serialises all requests so concurrent Streamlit
     sessions queue behind each other rather than hitting the Ollama daemon
@@ -120,7 +95,7 @@ class OllamaProvider:
         if tools:
             kwargs["tools"] = tools
 
-        with OllamaProvider._request_lock:
+        with OllamaClient._request_lock:
             try:
                 response = ollama.chat(**kwargs)
             except ResponseError as exc:
@@ -133,44 +108,24 @@ class OllamaProvider:
 
 
 # ---------------------------------------------------------------------------
-# Public accessors — singleton + factory
+# Public accessor: per-process singleton
 # ---------------------------------------------------------------------------
 
-# One provider object per process. Multiple Streamlit sessions (browser tabs)
+# One client object per process. Multiple Streamlit sessions (browser tabs)
 # sharing the same Python process all use the same instance so there is no
 # proliferation of HTTP client objects.
-_singleton: OllamaProvider | None = None
+_singleton: OllamaClient | None = None
 _singleton_lock = threading.Lock()
 
 
-def get_shared_instance() -> OllamaProvider:
-    """Return the per-process singleton OllamaProvider."""
+def get_shared_instance() -> OllamaClient:
+    """Return the per-process singleton OllamaClient."""
     global _singleton
     if _singleton is None:
         with _singleton_lock:
             if _singleton is None:
-                _singleton = OllamaProvider()
+                _singleton = OllamaClient()
     return _singleton
-
-
-def create_provider(provider_name: str, config: dict[str, Any]) -> LLMProvider:
-    """
-    Return the Ollama provider singleton.
-
-    The provider name is still accepted as an argument because
-    `pipeline.py` and `adapter.py` thread it through, but anything
-    other than "ollama" is rejected. Gemma 4 runs locally and needs
-    no credentials, so `config` is currently ignored.
-    """
-    name = str(provider_name).strip().lower()
-
-    if name == "ollama":
-        return get_shared_instance()
-
-    raise ValueError(
-        f"Unknown provider '{provider_name}'. "
-        "This build supports 'ollama' only (Gemma 4 runs locally)."
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -285,11 +240,9 @@ def _extract_raw_from_error(exc: Exception) -> str:
 
 
 __all__ = [
-    "LLMProvider",
     "LLMResponse",
     "ToolCall",
-    "OllamaProvider",
+    "OllamaClient",
     "get_shared_instance",
-    "create_provider",
     "serialize_arguments",
 ]

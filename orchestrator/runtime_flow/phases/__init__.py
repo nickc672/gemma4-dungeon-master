@@ -44,7 +44,7 @@ FILES IN THIS FOLDER
 ===================
 
 - "phase_one.py"
-    Defines "Phase1Runner" and its typed input and output dataclasses ("PhaseOneInput", "Phase1Output").
+    Defines "Phase1Runner" and its typed input and output dataclasses ("PhaseOneInput", "PhaseOneOutput").
     This runs the read-only Intent phase.
     During this phase, the AI is allowed to call any of these tools (all of which only read, never write):
         - "check_can_interact"
@@ -57,7 +57,7 @@ FILES IN THIS FOLDER
         - "get_recent_skill_checks"
         - the various world-model getters.
     The phase ends only when the AI calls "finalize_turn".
-    
+
 - "phase_two.py"
     Defines "Phase2Runner" and its typed dataclasses.
     This runs the Writes phase, where the AI is allowed to actually change the world.
@@ -85,7 +85,7 @@ HOW PIPELINE WIRES THESE TOGETHER
     )
 
 Each runner is constructed with:
-- An "LLMAdapter" (from the "llm_interaction/" folder), which knows how to talk to the AI.
+- An "LLMAdapter" (from the "llm_interaction/" folder), which knows how to talk to the model.
 - A prompt builder (from "llm_interaction/prompt_builders.py"), which knows how to assemble the prompt for that phase.
 - The relevant tool definitions (from "world_state/tool_registry.py").
 """

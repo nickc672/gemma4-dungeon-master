@@ -1,32 +1,27 @@
 {
-  "llm": {
-    "default_provider": "ollama",
-    "providers": {
-      "ollama": {
-        "default_model": "gemma4:31b",
-        "model_choices": [
-          "gemma4:e2b",
-          "gemma4:e4b",
-          "gemma4:26b",
-          "gemma4:31b"
-        ],
-        "default_options": {
-          "num_ctx": 8192,
-          "temperature": 0.2,
-          "top_p": 0.5,
-          "repeat_penalty": 1.0,
-          "top_k": 10,
-          "min_p": 0.1
-        },
-        "stage_options": {
-          "narrate": {
-            "temperature": 0.75,
-            "top_p": 0.93,
-            "repeat_penalty": 1.15,
-            "top_k": 50,
-            "min_p": 0.05
-          }
-        }
+  "model": {
+    "default": "gemma4:31b",
+    "choices": [
+      "gemma4:31b",
+      "llama3.1:8b",
+      "gpt-oss:20b",
+      "devstral-small-2:24b"
+    ],
+    "default_options": {
+      "num_ctx": 8192,
+      "temperature": 0.2,
+      "top_p": 0.5,
+      "repeat_penalty": 1.0,
+      "top_k": 10,
+      "min_p": 0.1
+    },
+    "stage_options": {
+      "narrate": {
+        "temperature": 0.75,
+        "top_p": 0.93,
+        "repeat_penalty": 1.15,
+        "top_k": 50,
+        "min_p": 0.05
       }
     }
   },

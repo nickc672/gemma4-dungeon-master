@@ -466,7 +466,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model",
         default=None,
-        help="Ollama tag for a Gemma 4 model variant (default: configured default in app_config.json)",
+        help="Ollama tag for the model to run (default: configured default in app_config.json)",
     )
 
     parser.add_argument(

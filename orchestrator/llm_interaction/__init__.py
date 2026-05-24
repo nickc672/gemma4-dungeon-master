@@ -12,8 +12,10 @@ It just hands a request to this layer and gets a response back.
 Think of this folder as a translator writing a letter to the model.
 The translator takes the game's data (current location, what the player
 just said, recent history) and writes it out as a prompt the model can
-understand. Then it hands the prompt to your local Ollama runtime,
-running a Gemma 4 model, and waits for an answer to return.
+understand. Then it hands the prompt to your local Ollama runtime
+and waits for an answer to return. The model on the other end can be
+any tag the Ollama daemon has loaded - what changes between runs is
+only the model tag in app_config.json.
 
 Two main entry points are visible to the rest of the code:
 - `LLMAdapter` (the class that sends a request and waits for a reply)
@@ -33,7 +35,7 @@ It only knows how to write a good prompt and how to make an API call.
 
 Keeping these jobs apart means we can change how prompts are worded
 without touching the turn loop, and change the turn loop without
-worrying about API details.
+worrying about transport details.
 
 
 ===================
@@ -43,9 +45,9 @@ FILES IN THIS LAYER
 - `adapter.py`
     Defines `LLMAdapter`, the class every phase of the turn loop uses to talk to the model.
     It is a thin wrapper over two things:
-        1. An `LLMProvider` (which knows how to actually call Ollama).
+        1. An `OllamaClient` (which knows how to actually make the request).
         2. An `AgentLoop` (which handles the back-and-forth when the model wants to call tools).
-    When created, it figures out which Gemma 4 model to use from its constructor arguments,
+    When created, it figures out which model to use from its constructor arguments,
     falling back to whatever `app_config.json` says.
     Also re-exports `LLMError` (the exception type for anything that goes wrong while
     talking to the model), and re-exports `DMC_ROLL_REQUIRED_SENTINEL` (a special marker
@@ -62,11 +64,9 @@ FILES IN THIS LAYER
 
 - `ollama.py`
     The entire LLM-transport layer in one file.
-    Defines the shared types (`LLMProvider`, `LLMResponse`, `ToolCall`),
-    the concrete `OllamaProvider` class that talks to a local Ollama daemon,
-    the `get_shared_instance()` per-process singleton accessor,
-    and the `create_provider(name, config)` factory kept for backwards-compatibility
-    with call-sites that still ask for "the provider named ollama".
+    Defines the shared types (`LLMResponse`, `ToolCall`),
+    the concrete `OllamaClient` class that talks to a local Ollama daemon,
+    and the `get_shared_instance()` per-process singleton accessor.
     Anything Ollama-specific (message format translation, response parsing) lives
     here and nowhere else.
 
@@ -105,13 +105,13 @@ WHY THERE IS AN ADAPTER AND AN AGENT_LOOP
 ==========================================
 
 The older version of the code had a single big `LLMAdapter` class that did everything.
-The older version knew the API of the provider, and it ran the back-and-forth
-conversation when the model used tools.
+It knew the Ollama API, and it also ran the back-and-forth conversation when the
+model used tools.
 That mixed two unrelated jobs into one file.
 
 The current version splits those jobs:
 - `AgentLoop` (in `agent_loop.py`) handles the conversation back-and-forth.
-- `OllamaProvider` (in `ollama.py`) handles the Ollama API.
+- `OllamaClient` (in `ollama.py`) handles the Ollama API.
 - `LLMAdapter` (in `adapter.py`) combines the two, so the rest of the codebase
   did not have to be rewritten when the split happened.
 

@@ -111,17 +111,6 @@ WHO IMPORTS THIS FOLDER
 - "runtime_flow/state_builder.py" reads "GameState".
 - "runtime_flow/reconciliation.py" uses "story.recompute_discovered_locations".
 - "cli.py" uses "tool_runtime.set_world_checkpoint_root" and "world_model.build_world_model".
-- "streamlit_app.py" uses entities, items, locations, "story_library", "tool_runtime", and "world_model".
-- "benchmark/runner.py" uses "story.mark_location_visited" and the orchestration-context binders from "tools.py".
-
-
-================
-NOTES FOR FUTURE
-================
-
-- "DynamicSentenceMemory.backend_status()" always returns "faiss_available: False".
-  If FAISS is ever brought back, this is where the wiring lands.
-
-- "world_model_tools.py" is the largest single file in this folder (about 64 KB).
-  It is fully active, but a natural candidate for a split into per-tool modules if it keeps growing.
+- "streamlit_app.py" uses "tool_runtime.set_world_checkpoint_root", "world_model.build_world_model", and "story_library.list_story_sources".
+- "benchmark/runner.py" uses "story.mark_location_visited" and the "bind_turn_orchestration_ctx" / "clear_turn_orchestration_ctx" pair from "tools".
 """

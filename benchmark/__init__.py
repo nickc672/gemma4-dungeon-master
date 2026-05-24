@@ -21,16 +21,16 @@ HOW TO RUN IT
 =============
 
 Run all phases against one model and get both JSON + HTML:
-    python3 -m benchmark.runner --model <model-name> --provider <ollama|openai|anthropic>
+    python3 -m benchmark.runner --model <model-name>
 
 
 Run and skip the HTML (JSON only)
-    python3 -m benchmark.runner --model <model-name> --provider <ollama|openai|anthropic> --no-html
+    python3 -m benchmark.runner --model <model-name> --no-html
 
 
 Run specific tests only
-    python3 -m benchmark.runner --model <model-name> --provider <ollama|openai|anthropic> --tests <phase_one|narration|phase_two> 
-                                                                                                (any combination - ex: phase_one, phase_two)
+    python3 -m benchmark.runner --model <model-name> --tests <phase_one|narration|phase_two>
+                                                            (any combination - ex: phase_one, phase_two)
 
 
 ==========================
@@ -49,7 +49,7 @@ Latest with custom output path:
 
 
 Select Specific files into an HTML report:
-    python3 -m benchmark.report output/20260517_143000_gpt-oss_20b_results.json output/20260517_150000_llama3.1_70b_results.json
+    python3 -m benchmark.report output/20260517_143000_llama3.1_8b_results.json
 
 
 ===================
@@ -58,7 +58,7 @@ FILES IN THIS FOLDER
 
 - "runner.py"
     The benchmark loop itself.
-    For each scenario: 
+    For each scenario:
       1. builds a fresh "StoryEngine"
       2. configures its "GameState" to match the scenario
       3. calls just one phase ("engine.phase_one", "engine.narration", or "engine.phase_two") with the right input dataclass

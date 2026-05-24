@@ -3,10 +3,9 @@ from typing import Any, Dict, Sequence, Optional, List, Callable
 from .conversation_log import History
 from ..llm_interaction.adapter import LLMAdapter
 from ..app_config import (
-    get_default_provider,
     get_default_model,
-    get_provider_default_options,
-    get_provider_stage_options,
+    get_default_options,
+    get_stage_options,
     get_roll_mode,
 )
 from .reconciliation import build_runtime_state_snapshot, reconcile_turn
@@ -69,9 +68,7 @@ class StoryEngine:
     def __init__(
         self,
         *,
-        provider: Optional[str] = None,
         model: Optional[str] = None,
-        api_key: Optional[str] = None,
         world_model: Optional[WorldModel] = None,
         world_model_data_dir: Optional[str] = None,
         starting_location: Optional[str] = None,
@@ -126,30 +123,12 @@ class StoryEngine:
         if self.roll_mode == "manual" and not callable(self.manual_roll_provider):
             self.roll_mode = "auto"
 
-        resolved_provider = str(provider or get_default_provider()).strip().lower()
-        if resolved_provider != "ollama":
-            raise ValueError(
-                f"StoryEngine only supports the 'ollama' provider in this build. "
-                f"Got: '{resolved_provider}'. Gemma 4 runs locally via Ollama."
-            )
-        resolved_model = model or get_default_model(resolved_provider)
-
-        # The api_key parameter is accepted for backwards-compatibility with
-        # callers that built engines for the multi-provider era. Ollama runs
-        # locally and needs no credentials, so the value is intentionally ignored.
-        _ = api_key
-
-        from ..app_config import get_provider_config
-        from ..llm_interaction.ollama import create_provider
-
-        provider_config = dict(get_provider_config(resolved_provider))
-        llm_provider = create_provider(resolved_provider, provider_config)
+        resolved_model = model or get_default_model()
 
         self.adapter = LLMAdapter(
             model=resolved_model,
-            provider=llm_provider,
-            default_options=get_provider_default_options(resolved_provider),
-            stage_options=get_provider_stage_options(resolved_provider),
+            default_options=get_default_options(),
+            stage_options=get_stage_options(),
             verbose=verbose,
         )
 

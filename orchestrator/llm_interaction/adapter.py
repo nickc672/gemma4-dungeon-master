@@ -1,21 +1,21 @@
 from __future__ import annotations
 
 """
-LLMAdapter — backward-compatible facade over AgentLoop + LLMProvider.
+LLMAdapter - facade over AgentLoop and the OllamaClient.
 
 Existing call-sites (pipeline.py, benchmark/runner.py, step.py) continue to
-work unchanged.  Internally all transport and looping is delegated to the
-new provider abstraction and AgentLoop.
+work unchanged. Transport and looping are delegated to AgentLoop and the
+OllamaClient under the hood.
 """
 
 import json
 import logging
-from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Union
+from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
 from .agent_loop import AgentHooks, AgentLoop, AgentResult
 from .agent_loop import LLMError  # re-exported for call-sites that import it here
-from .agent_loop import DMC_ROLL_REQUIRED_SENTINEL  # noqa: F401 — re-exported sentinel
-from .ollama import LLMProvider
+from .agent_loop import DMC_ROLL_REQUIRED_SENTINEL  # noqa: F401 -- re-exported sentinel
+from .ollama import OllamaClient, get_shared_instance
 
 logger = logging.getLogger(__name__)
 
@@ -23,19 +23,14 @@ logger = logging.getLogger(__name__)
 class LLMAdapter:
     """
     Thin facade that presents the original LLMAdapter API while delegating
-    all work to AgentLoop and an LLMProvider.
-
-    Provider selection order:
-      1. Explicit ``provider`` argument passed at construction time.
-      2. Active provider read from app_config (``get_active_provider``).
-      3. Falls back to Ollama for backward compatibility.
+    all work to AgentLoop and an OllamaClient.
     """
 
     def __init__(
         self,
         model: str,
         *,
-        provider: Optional[LLMProvider] = None,
+        client: Optional[OllamaClient] = None,
         default_options: Optional[Mapping[str, Any]] = None,
         stage_options: Optional[Mapping[str, Mapping[str, Any]]] = None,
         max_attempts: int = 3,
@@ -45,11 +40,11 @@ class LLMAdapter:
         self._verbose = verbose
         self.force_retry_stage = force_retry_stage  # used by LLMStep only
 
-        if provider is None:
-            provider = _default_provider()
+        if client is None:
+            client = get_shared_instance()
 
         self._loop = AgentLoop(
-            provider,
+            client,
             model=model,
             default_options=dict(default_options or {}),
             stage_options=dict(stage_options or {}),
@@ -77,20 +72,6 @@ class LLMAdapter:
         self._verbose = bool(value)
         self._loop.verbose = bool(value)
 
-    def set_provider(
-        self,
-        provider: LLMProvider,
-        *,
-        default_options: Optional[Mapping[str, Any]] = None,
-        stage_options: Optional[Mapping[str, Mapping[str, Any]]] = None,
-    ) -> None:
-        """Swap the underlying provider and its options on the live loop."""
-        self._loop.provider = provider
-        if default_options is not None:
-            self._loop.default_options = dict(default_options)
-        if stage_options is not None:
-            self._loop.stage_options = dict(stage_options)
-
     # ------------------------------------------------------------------
     # Single-shot text / JSON helpers (used by LLMStep / narrate / intro)
     # ------------------------------------------------------------------
@@ -117,7 +98,7 @@ class LLMAdapter:
             {"role": "user", "content": json.dumps(payload, separators=(",", ":"))},
         ]
         for attempt in range(1, self._loop.max_attempts + 1):
-            response = self._loop.provider.chat(
+            response = self._loop.client.chat(
                 model=self.model,
                 messages=messages,
                 options=self._loop._options(stage),
@@ -215,22 +196,6 @@ class LLMAdapter:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-def _default_provider() -> LLMProvider:
-    """
-    Create a provider from app_config. Falls back to Ollama if config is
-    unavailable (e.g. in tests or benchmark runs).
-    """
-    try:
-        from ..app_config import get_default_provider, get_provider_config
-        from .ollama import create_provider
-        name = get_default_provider()
-        config = get_provider_config(name)
-        return create_provider(name, config)
-    except Exception:
-        from .ollama import get_shared_instance
-        return get_shared_instance()
-
 
 def _parse_json(raw: str) -> Dict[str, Any]:
     text = raw.strip()
